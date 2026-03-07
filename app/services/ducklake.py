@@ -2,7 +2,9 @@
 
 import os
 import threading
+
 import duckdb
+
 from app.config import CATALOG_PATH, DATA_PATH, DUCKLAKE_NAME
 
 
@@ -109,15 +111,16 @@ class DuckLakeManager:
                 except Exception:
                     row_count = -1
 
-                tables.append({
-                    "name": table_name,
-                    "column_count": len(col_info),
-                    "row_count": row_count,
-                    "columns": [
-                        {"column_name": col[0], "data_type": col[1]}
-                        for col in col_info
-                    ],
-                })
+                tables.append(
+                    {
+                        "name": table_name,
+                        "column_count": len(col_info),
+                        "row_count": row_count,
+                        "columns": [
+                            {"column_name": col[0], "data_type": col[1]} for col in col_info
+                        ],
+                    }
+                )
 
             return tables
 

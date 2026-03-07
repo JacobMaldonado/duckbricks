@@ -1,0 +1,1 @@
+"""DuckBricks tests."""

@@ -5,7 +5,7 @@ from nicegui import app, ui
 
 from app.config import CATALOG_PATH, HOST, PORT
 from app.pages.explorer import explorer_page
-from app.pages.query import query_page
+from app.pages.query import query_workspace
 from app.services.ducklake import manager
 
 
@@ -35,8 +35,8 @@ def explorer():
 
 @ui.page("/query")
 def query():
-    """SQL Query Editor view."""
-    query_page()
+    """SQL Query Workspace."""
+    query_workspace()
 
 
 if __name__ == "__main__":

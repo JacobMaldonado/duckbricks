@@ -12,4 +12,4 @@ def layout_frame(title: str = "DuckBricks"):
         ui.link("Query Editor", "/query").classes("text-white q-ml-md")
         # Spacer to push items apart
         ui.space()
-        ui.label("v0.1.0").classes("text-caption q-mr-md")
+        ui.label("v0.1.1").classes("text-caption q-mr-md")

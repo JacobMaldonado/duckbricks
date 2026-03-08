@@ -15,8 +15,8 @@ def test_explorer_page_is_importable():
     assert callable(explorer_page)
 
 
-def test_query_page_is_importable():
-    """query_page should be importable."""
-    from app.pages.query import query_page
+def test_query_workspace_is_importable():
+    """query_workspace should be importable."""
+    from app.pages.query import query_workspace
 
-    assert callable(query_page)
+    assert callable(query_workspace)

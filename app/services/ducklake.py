@@ -124,6 +124,94 @@ class DuckLakeManager:
 
             return tables
 
+    def list_catalogs(self) -> list[str]:
+        """List all user-facing database catalogs (excluding system databases)."""
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        with self._lock:
+            result = self._conn.execute("SHOW DATABASES").fetchall()
+            excluded = {"memory", "system", "temp"}
+            return [
+                row[0]
+                for row in result
+                if row[0] not in excluded
+                and not row[0].startswith("__ducklake_metadata_")
+            ]
+
+    def list_schemas(self, catalog: str) -> list[str]:
+        """List schemas within a catalog."""
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        with self._lock:
+            result = self._conn.execute(
+                f"SELECT schema_name FROM information_schema.schemata "
+                f"WHERE catalog_name = '{catalog}'"
+            ).fetchall()
+            return [row[0] for row in result]
+
+    def list_tables_in_schema(self, catalog: str, schema: str) -> list[str]:
+        """List table names in a specific catalog.schema."""
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        with self._lock:
+            result = self._conn.execute(
+                f"SELECT table_name FROM information_schema.tables "
+                f"WHERE table_catalog = '{catalog}' "
+                f"AND table_schema = '{schema}'"
+            ).fetchall()
+            return [row[0] for row in result]
+
+    def execute_query_typed(self, sql: str) -> dict:
+        """Execute a SQL query and return results with column type info.
+
+        Returns dict with:
+            - success: bool
+            - columns: list of {"name": str, "type": str}
+            - rows: list of lists
+            - row_count: int
+            - message: str | None (for DDL/non-result queries)
+            - error: str | None (on failure)
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        with self._lock:
+            try:
+                result = self._conn.execute(sql)
+                description = result.description
+                if description:
+                    columns = [
+                        {"name": desc[0], "type": str(desc[1])}
+                        for desc in description
+                    ]
+                    rows = result.fetchall()
+                    return {
+                        "success": True,
+                        "columns": columns,
+                        "rows": [list(row) for row in rows],
+                        "row_count": len(rows),
+                    }
+                else:
+                    return {
+                        "success": True,
+                        "columns": [],
+                        "rows": [],
+                        "row_count": 0,
+                        "message": "Query executed successfully "
+                        "(no results).",
+                    }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "columns": [],
+                    "rows": [],
+                    "row_count": 0,
+                    "error": str(e),
+                }
+
     def get_table(self, table_name: str) -> dict | None:
         """Get detailed info for a specific table."""
         if not self._initialized:

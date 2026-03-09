@@ -1,13 +1,30 @@
 """Query Workspace page — IDE-like SQL editor with catalog browser."""
 from nicegui import ui
 
+from app.components.hierarchy_tree import render_hierarchy_tree
 from app.components.layout import layout_frame
 from app.services.ducklake import manager
 
 
-def _build_catalog_tree() -> ui.tree:
-    """Build the catalog hierarchy tree with lazy loading."""
+# Keep legacy _find_node for backward compatibility with existing tests
+def _find_node(
+    nodes: list[dict], node_id: str
+) -> dict | None:
+    """Recursively find a node by ID in the tree (legacy function for tests)."""
+    for node in nodes:
+        if node["id"] == node_id:
+            return node
+        children = node.get("children", [])
+        if children:
+            found = _find_node(children, node_id)
+            if found:
+                return found
+    return None
 
+
+# Keep legacy _build_catalog_tree for backward compatibility with existing tests
+def _build_catalog_tree() -> ui.tree:
+    """Build the catalog hierarchy tree with lazy loading (legacy function for tests)."""
     def load_tree_nodes() -> list[dict]:
         """Load top-level catalog nodes."""
         if not manager.is_initialized:
@@ -84,21 +101,6 @@ def _build_catalog_tree() -> ui.tree:
 
     tree.on("expand", on_expand)
     return tree
-
-
-def _find_node(
-    nodes: list[dict], node_id: str
-) -> dict | None:
-    """Recursively find a node by ID in the tree."""
-    for node in nodes:
-        if node["id"] == node_id:
-            return node
-        children = node.get("children", [])
-        if children:
-            found = _find_node(children, node_id)
-            if found:
-                return found
-    return None
 
 
 def _render_results(results_container, result: dict):
@@ -224,7 +226,10 @@ def query_workspace():
                 with ui.scroll_area().classes(
                     "w-full"
                 ).style("flex: 1"):
-                    _build_catalog_tree()
+                    tree_container = ui.column().classes("w-full")
+                    
+                    # Use shared hierarchy tree component
+                    render_hierarchy_tree(tree_container)
 
         # === RIGHT PANEL: Editor + Results ===
         with h_splitter.after:

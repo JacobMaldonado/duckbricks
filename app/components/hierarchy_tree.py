@@ -1,4 +1,10 @@
-"""Reusable hierarchy tree component for catalog browsing."""
+"""Reusable hierarchy tree component for catalog browsing.
+
+Uses NiceGUI's on_expand callback with placeholder children pattern.
+Quasar's lazy: True requires a JS done() callback that can't be called
+from Python, so we use expandable nodes with placeholder children instead.
+When a node is expanded, the placeholder is replaced with real data.
+"""
 
 from typing import Callable
 
@@ -7,205 +13,183 @@ from nicegui import ui
 from app.services.ducklake import DuckLakeManager
 
 
+# Placeholder child used to make nodes expandable (shows expand arrow)
+_LOADING_ID_PREFIX = "__loading_"
+
+
+def _make_loading_child(parent_id: str) -> dict:
+    """Create a placeholder child that makes the parent expandable."""
+    return {
+        "id": f"{_LOADING_ID_PREFIX}{parent_id}",
+        "label": "Loading...",
+        "icon": "hourglass_empty",
+    }
+
+
 def render_hierarchy_tree(
     container: ui.element,
     on_table_select: Callable[[str], None] | None = None,
     ducklake_manager: DuckLakeManager | None = None,
 ) -> ui.tree:
-    """Render catalog → schema → table hierarchy with lazy loading.
+    """Render catalog -> schema -> table hierarchy with on-demand loading.
 
-    This component implements a three-level hierarchy tree that lazy-loads
-    children on demand when nodes are expanded.
+    Nodes start with a placeholder child so Quasar shows the expand arrow.
+    When a user expands a node, the placeholder is swapped with real data
+    fetched from the DuckLakeManager service layer.
 
     Args:
-        container: NiceGUI container to render the tree into
-        on_table_select: Optional callback invoked when table selected
-                         (receives fully qualified table name: catalog.schema.table)
-        ducklake_manager: Optional DuckLakeManager instance (defaults to singleton)
+        container: NiceGUI element to render into.
+        on_table_select: Optional callback(fully_qualified_table_name).
+        ducklake_manager: DuckLakeManager instance (defaults to singleton).
 
     Returns:
-        Configured ui.tree component
-
-    Note:
-        Nodes use "lazy: True" property to be expandable without children.
-        Node IDs follow format: catalog → catalog.schema → catalog.schema.table
+        The ui.tree instance.
     """
-    # Import default manager if not provided
     if ducklake_manager is None:
         from app.services.ducklake import manager as ducklake_manager
 
-    def load_catalogs() -> list[dict]:
-        """Load top-level catalog nodes."""
+    # -- build initial catalog nodes --------------------------------
+    def _load_catalogs() -> list[dict]:
         if not ducklake_manager.is_initialized:
-            return [
-                {
-                    "id": "__not_initialized__",
-                    "label": "⚠️ DuckLake not initialized",
-                    "icon": "error",
-                }
-            ]
-
+            return [{
+                "id": "__not_initialized__",
+                "label": "⚠️ DuckLake not initialized",
+                "icon": "warning",
+            }]
         try:
             catalogs = ducklake_manager.list_catalogs()
             if not catalogs:
-                return [
-                    {
-                        "id": "__empty_catalogs__",
-                        "label": "No catalogs available",
-                        "icon": "info",
-                    }
-                ]
-
+                return [{
+                    "id": "__no_catalogs__",
+                    "label": "(No catalogs)",
+                    "icon": "info",
+                }]
             return [
                 {
                     "id": cat,
-                    "label": f"📦 {cat}",
-                    "lazy": True,  # KEY FIX: marks as expandable without children
+                    "label": cat,
+                    "icon": "storage",
+                    "children": [_make_loading_child(cat)],
                 }
                 for cat in catalogs
             ]
-        except Exception as e:
-            ui.notify(f"Failed to load catalogs: {e}", type="negative")
-            return [
-                {
-                    "id": "__error_catalogs__",
-                    "label": f"⚠️ Error loading catalogs: {str(e)}",
-                    "icon": "error",
-                }
-            ]
+        except Exception as exc:
+            ui.notify(f"Failed to load catalogs: {exc}", type="negative")
+            return [{
+                "id": "__error__",
+                "label": f"Error: {exc}",
+                "icon": "error",
+            }]
 
-    # Initialize tree with catalog nodes
-    nodes = load_catalogs()
+    initial_nodes = _load_catalogs()
 
+    # -- render tree ------------------------------------------------
     with container:
-        tree = ui.tree(nodes, node_key="id", label_key="label").classes("w-full")
+        tree = ui.tree(
+            initial_nodes,
+            node_key="id",
+            label_key="label",
+            on_select=lambda e: _handle_select(e),
+            on_expand=lambda e: _handle_expand(e),
+        ).classes("w-full")
 
-    # Track which nodes have been loaded to avoid re-loading
-    loaded_nodes: set[str] = set()
+    # track which nodes already had their children loaded
+    loaded: set[str] = set()
 
-    async def on_expand_handler(e):
-        """Handle node expansion - lazy load children."""
-        # e.value contains set/list of currently expanded node IDs
-        expanded_ids = e.value if isinstance(e.value, (list, set)) else [e.value]
+    # -- expand handler ---------------------------------------------
+    def _handle_expand(e) -> None:
+        """Replace placeholder children with real data on expand."""
+        expanded_keys: list = e.value if isinstance(e.value, list) else [e.value]
 
-        for node_id in expanded_ids:
-            # Skip if already loaded
-            if node_id in loaded_nodes:
+        changed = False
+        for key in expanded_keys:
+            if key in loaded or key.startswith("__"):
                 continue
 
-            # Find the node in the tree - FIX: use tree.props not tree._props
-            node = _find_node(tree.props["nodes"], node_id)
+            node = _find_node(tree._props["nodes"], key)
             if node is None:
                 continue
 
-            # Skip special nodes (error/empty indicators)
-            if node["id"].startswith("__"):
+            # check if children are just the loading placeholder
+            children = node.get("children", [])
+            if children and not children[0]["id"].startswith(_LOADING_ID_PREFIX):
+                # already loaded (e.g. user collapsed then re-expanded)
+                loaded.add(key)
                 continue
 
-            # Determine node level by counting dots in ID
-            parts = node_id.split(".")
-
+            parts = key.split(".")
             try:
                 if len(parts) == 1:
-                    # Catalog node - load schemas
-                    catalog = parts[0]
-                    schemas = ducklake_manager.list_schemas(catalog)
-
+                    # catalog -> load schemas
+                    schemas = ducklake_manager.list_schemas(parts[0])
                     if not schemas:
-                        node["children"] = [
-                            {
-                                "id": f"{catalog}.__empty_schemas__",
-                                "label": "No schemas available",
-                                "icon": "info",
-                            }
-                        ]
+                        node["children"] = [{
+                            "id": f"{key}.__empty__",
+                            "label": "(No schemas)",
+                            "icon": "info",
+                        }]
                     else:
                         node["children"] = [
                             {
-                                "id": f"{catalog}.{schema}",
-                                "label": f"📂 {schema}",
-                                "lazy": True,
+                                "id": f"{key}.{s}",
+                                "label": s,
+                                "icon": "folder",
+                                "children": [_make_loading_child(f"{key}.{s}")],
                             }
-                            for schema in schemas
+                            for s in schemas
                         ]
-
                 elif len(parts) == 2:
-                    # Schema node - load tables
+                    # schema -> load tables
                     catalog, schema = parts
                     tables = ducklake_manager.list_tables_in_schema(catalog, schema)
-
                     if not tables:
-                        node["children"] = [
-                            {
-                                "id": f"{catalog}.{schema}.__empty_tables__",
-                                "label": "No tables available",
-                                "icon": "info",
-                            }
-                        ]
+                        node["children"] = [{
+                            "id": f"{key}.__empty__",
+                            "label": "(No tables)",
+                            "icon": "info",
+                        }]
                     else:
                         node["children"] = [
                             {
-                                "id": f"{catalog}.{schema}.{table}",
-                                "label": f"📋 {table}",
-                                # No lazy property - this is a leaf node
+                                "id": f"{key}.{t}",
+                                "label": t,
+                                "icon": "table_chart",
                             }
-                            for table in tables
+                            for t in tables
                         ]
+                loaded.add(key)
+                changed = True
+            except Exception as exc:
+                ui.notify(f"Error loading {key}: {exc}", type="negative")
+                node["children"] = [{
+                    "id": f"{key}.__error__",
+                    "label": f"Error: {exc}",
+                    "icon": "error",
+                }]
+                changed = True
 
-                # Remove lazy property after loading children
-                node.pop("lazy", None)
-                loaded_nodes.add(node_id)
+        if changed:
+            tree.update()
 
-            except Exception as e:
-                ui.notify(f"Failed to load children for {node_id}: {e}", type="negative")
-                node["children"] = [
-                    {
-                        "id": f"{node_id}.__error__",
-                        "label": f"⚠️ Error: {str(e)}",
-                        "icon": "error",
-                    }
-                ]
-                node.pop("lazy", None)
-
-        # Update the tree to reflect changes
-        tree.update()
-
-    async def on_select_handler(e):
-        """Handle node selection - invoke callback for table selections."""
-        if not e.value or not on_table_select:
+    # -- select handler ---------------------------------------------
+    def _handle_select(e) -> None:
+        if not on_table_select or not e.value:
             return
-
-        node_id = e.value
-        parts = node_id.split(".")
-
-        # Only handle table selections (3 parts: catalog.schema.table)
-        if len(parts) == 3 and not node_id.endswith("__empty_tables__"):
-            # Pass the fully qualified table name
-            on_table_select(node_id)
-
-    # Register event handlers
-    tree.on("expand", on_expand_handler)
-    tree.on("select", on_select_handler)
+        key = e.value
+        parts = key.split(".")
+        # only fire for table-level nodes (catalog.schema.table)
+        if len(parts) == 3 and not key.endswith("__empty__"):
+            on_table_select(key)
 
     return tree
 
 
 def _find_node(nodes: list[dict], node_id: str) -> dict | None:
-    """Recursively find a node by ID in the tree structure.
-
-    Args:
-        nodes: List of node dictionaries
-        node_id: ID of the node to find
-
-    Returns:
-        Node dictionary if found, None otherwise
-    """
+    """Recursively locate a node by its id."""
     for node in nodes:
         if node["id"] == node_id:
             return node
-        children = node.get("children", [])
-        if children:
-            found = _find_node(children, node_id)
-            if found:
-                return found
+        found = _find_node(node.get("children", []), node_id)
+        if found:
+            return found
     return None

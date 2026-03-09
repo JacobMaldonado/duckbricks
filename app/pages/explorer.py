@@ -1,18 +1,9 @@
 """Metastore Explorer page."""
 from nicegui import ui
 
+from app.components.hierarchy_tree import render_hierarchy_tree
 from app.components.layout import layout_frame
 from app.services.ducklake import manager
-
-
-def _render_empty_state():
-    """Render the empty metastore state."""
-    ui.label("No tables found in the metastore.").classes(
-        "text-subtitle1 text-grey"
-    )
-    ui.label(
-        "Create tables using the Query Editor to see them here."
-    ).classes("text-caption text-grey")
 
 
 def _render_init_prompt():
@@ -39,88 +30,130 @@ def _render_init_prompt():
 def _render_schema(schema_container: ui.column, table_name: str):
     """Render schema detail for a selected table."""
     schema_container.clear()
-    table_info = manager.get_table(table_name)
-    if table_info is None:
-        with schema_container:
-            ui.label(f"Table '{table_name}' not found.").classes(
-                "text-negative"
-            )
-        return
-
-    with schema_container:
-        ui.label(f"Table: {table_info['name']}").classes(
-            "text-h5 q-mb-sm"
+    
+    # Get table schema using the fully qualified name
+    try:
+        result = manager.execute_query_typed(
+            f"DESCRIBE {table_name}"
         )
-        ui.label(
-            f"Rows: {table_info['row_count']}"
-            f" | Columns: {table_info['column_count']}"
-        ).classes("text-caption text-grey q-mb-md")
-
-        columns = [
-            {
-                "name": "column_name",
-                "label": "Column Name",
-                "field": "column_name",
-                "align": "left",
-            },
-            {
-                "name": "data_type",
-                "label": "Data Type",
-                "field": "data_type",
-                "align": "left",
-            },
-            {
-                "name": "is_nullable",
-                "label": "Nullable",
-                "field": "is_nullable",
-                "align": "left",
-            },
-        ]
-        rows = table_info.get("columns", [])
-        ui.table(
-            columns=columns, rows=rows, row_key="column_name"
-        ).classes("w-full")
-
-
-def _render_table_list(tables: list[dict]):
-    """Render table list with clickable items and schema detail."""
-    ui.label(f"{len(tables)} table(s) found").classes(
-        "text-subtitle2 text-grey q-mb-md"
-    )
-
-    schema_container = ui.column().classes("w-full")
-
-    for t in tables:
-        ui.button(
-            f"📋 {t['name']}"
-            f" ({t['column_count']} cols, {t['row_count']} rows)",
-            on_click=lambda _, name=t["name"]: _render_schema(
-                schema_container, name
-            ),
-        ).classes("q-mb-xs").props("flat align=left")
+        
+        if not result.get("success"):
+            with schema_container:
+                ui.label(f"Error loading schema for '{table_name}'").classes(
+                    "text-negative q-pa-md"
+                )
+                ui.label(result.get("error", "Unknown error")).classes(
+                    "text-caption text-grey"
+                )
+            return
+        
+        columns = result.get("columns", [])
+        rows = result.get("rows", [])
+        
+        with schema_container:
+            ui.label(f"Table: {table_name}").classes(
+                "text-h5 q-mb-sm q-pa-md"
+            )
+            
+            if not rows:
+                ui.label("No column information available.").classes(
+                    "text-caption text-grey q-pa-md"
+                )
+                return
+            
+            ui.label(f"{len(rows)} column(s)").classes(
+                "text-caption text-grey q-mb-md q-px-md"
+            )
+            
+            # Build table columns from DESCRIBE result
+            table_columns = [
+                {
+                    "name": col["name"],
+                    "label": f"{col['name']} ({col['type']})",
+                    "field": col["name"],
+                    "align": "left",
+                }
+                for col in columns
+            ]
+            
+            # Build rows from result
+            col_names = [col["name"] for col in columns]
+            table_rows = [
+                {
+                    name: str(val) if val is not None else ""
+                    for name, val in zip(col_names, row)
+                }
+                for row in rows
+            ]
+            
+            ui.table(
+                columns=table_columns,
+                rows=table_rows,
+                row_key=col_names[0] if col_names else "id"
+            ).classes("w-full q-px-md")
+    
+    except Exception as e:
+        with schema_container:
+            ui.label(f"Error loading schema for '{table_name}'").classes(
+                "text-negative q-pa-md"
+            )
+            ui.label(str(e)).classes("text-caption text-grey")
 
 
 def explorer_page():
     """Render the Metastore Explorer page."""
     layout_frame()
 
-    with ui.column().classes("q-pa-lg w-full"):
-        ui.label("Metastore Explorer").classes("text-h4 q-mb-md")
+    # Disable outer scrolling for consistent layout
+    ui.query("body").style("overflow: hidden")
+    ui.query(".nicegui-content").classes("p-0").style(
+        "padding: 0 !important; "
+        "height: calc(100vh - 64px) !important;"
+    )
 
-        if not manager.is_initialized:
+    if not manager.is_initialized:
+        with ui.column().classes(
+            "q-pa-lg w-full items-center"
+        ):
             _render_init_prompt()
-            return
+        return
 
-        try:
-            tables = manager.list_tables()
-        except Exception as e:
-            ui.label(f"Error loading tables: {e}").classes(
-                "text-negative"
-            )
-            return
+    # Two-panel layout: left=hierarchy tree | right=schema details
+    with ui.splitter(
+        value=30, limits=(15, 50)
+    ).classes("w-full").style(
+        "height: calc(100vh - 64px)"
+    ) as splitter:
 
-        if not tables:
-            _render_empty_state()
-            return
+        # === LEFT PANEL: Hierarchy Tree ===
+        with splitter.before:
+            with ui.column().classes("w-full h-full p-0"):
+                ui.label("Catalog Browser").classes(
+                    "text-subtitle2 q-pa-sm bg-grey-2"
+                ).style("margin: 0")
+                
+                with ui.scroll_area().classes(
+                    "w-full"
+                ).style("flex: 1"):
+                    tree_container = ui.column().classes("w-full")
 
-        _render_table_list(tables)
+        # === RIGHT PANEL: Schema Details ===
+        with splitter.after:
+            with ui.scroll_area().classes("w-full h-full"):
+                schema_container = ui.column().classes("w-full")
+                with schema_container:
+                    ui.label(
+                        "Select a table to view its schema"
+                    ).classes(
+                        "text-subtitle2 text-grey q-pa-md"
+                    )
+
+        # Render the hierarchy tree with table selection callback
+        def handle_table_selection(table_name: str):
+            """Handle table selection from hierarchy tree."""
+            _render_schema(schema_container, table_name)
+
+        render_hierarchy_tree(
+            tree_container,
+            on_table_select=handle_table_selection
+        )

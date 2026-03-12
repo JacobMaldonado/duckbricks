@@ -270,18 +270,18 @@ class DuckLakeManager:
         """
         if not self._initialized:
             raise RuntimeError("Metastore not initialized.")
-        
+
         with self._lock:
             result = self._conn.execute(sql)
-            
+
             # Create CSV in memory
             output = io.StringIO()
             writer = csv.writer(output)
-            
+
             # Write header
             columns = [desc[0] for desc in result.description]
             writer.writerow(columns)
-            
+
             # Write rows (fetch in batches for large results)
             batch_size = 10000
             while True:
@@ -290,7 +290,7 @@ class DuckLakeManager:
                     break
                 for row in rows:
                     writer.writerow(row)
-            
+
             # Convert to bytes
             return output.getvalue().encode('utf-8')
 
@@ -312,15 +312,15 @@ class DuckLakeManager:
         """
         if not self._initialized:
             raise RuntimeError("Metastore not initialized.")
-        
+
         parts = full_table_name.split(".")
         if len(parts) != 3:
             raise ValueError(
                 "Invalid table name format. Expected: catalog.schema.table"
             )
-        
+
         catalog, schema, table = parts
-        
+
         with self._lock:
             # Get row count
             try:
@@ -330,7 +330,7 @@ class DuckLakeManager:
                 row_count = count_result[0] if count_result else 0
             except Exception:
                 row_count = -1
-            
+
             # Get constraints (simplified - DuckDB info_schema support)
             constraints = []
             try:
@@ -354,7 +354,7 @@ class DuckLakeManager:
             except Exception:
                 # Not all databases support this
                 pass
-            
+
             # Placeholder values for features not yet implemented
             return {
                 "partitions": [],  # TODO: Query DuckLake partitioning info
@@ -380,11 +380,11 @@ class DuckLakeManager:
         """
         if not self._initialized:
             raise RuntimeError("Metastore not initialized.")
-        
+
         # Note: This depends on DuckLake's versioning implementation
         # DuckLake uses Iceberg-like versioning
         # This is a placeholder until DuckLake exposes version history
-        
+
         # TODO: Query DuckLake version history when API is available
         return []
 
@@ -403,10 +403,10 @@ class DuckLakeManager:
         """
         if not self._initialized:
             raise RuntimeError("Metastore not initialized.")
-        
+
         if not query or len(query) < 1:
             return []
-        
+
         with self._lock:
             # Use parameterized query to avoid SQL injection
             # and search across all catalogs
@@ -425,12 +425,12 @@ class DuckLakeManager:
                 ORDER BY table_name
                 LIMIT 10
             """
-            
+
             try:
                 result = self._conn.execute(
                     sql, [f"%{query}%"]
                 ).fetchall()
-                
+
                 return [
                     {
                         "full_name": row[0],

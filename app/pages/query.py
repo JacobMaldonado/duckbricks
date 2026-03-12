@@ -30,7 +30,7 @@ def _build_catalog_tree(on_insert_path=None) -> ui.tree:
             return []
 
     nodes = load_tree_nodes()
-    
+
     # Add custom styling for insert icons
     ui.add_head_html("""
     <style>
@@ -44,7 +44,7 @@ def _build_catalog_tree(on_insert_path=None) -> ui.tree:
         }
     </style>
     """)
-    
+
     tree = ui.tree(
         nodes=nodes,
         node_key="id",
@@ -104,7 +104,7 @@ def _build_catalog_tree(on_insert_path=None) -> ui.tree:
         tree.update()
 
     tree.on("expand", on_expand)
-    
+
     # Add click handler for insert action
     if on_insert_path:
         def on_select(e):
@@ -114,9 +114,9 @@ def _build_catalog_tree(on_insert_path=None) -> ui.tree:
                 parts = selected_id.split(".")
                 if len(parts) == 3:  # It's a table
                     on_insert_path(selected_id)
-        
+
         tree.on("dblclick", on_select)
-    
+
     return tree
 
 
@@ -169,13 +169,13 @@ def _render_results(results_container, result: dict, sql_query: str = ""):
             return
 
         rows = result.get("rows", [])
-        
+
         # Header with row count and export button
         with ui.row().classes("w-full items-center justify-between q-pa-xs"):
             ui.label(
                 f"{result['row_count']} row(s) returned"
             ).classes("text-caption text-grey")
-            
+
             # Export button
             def export_to_csv():
                 """Export current results to CSV."""
@@ -191,7 +191,7 @@ def _render_results(results_container, result: dict, sql_query: str = ""):
                     ui.notify("CSV export started", type="positive")
                 except Exception as e:
                     ui.notify(f"Export failed: {str(e)}", type="negative")
-            
+
             ui.button(
                 "📥 Export to CSV",
                 on_click=export_to_csv,
@@ -323,14 +323,14 @@ def query_workspace():
                                 "text-caption text-grey"
                             )
                             ui.space()
-                            
+
                             # Table search/autocomplete
                             search_input = ui.input(
                                 placeholder="Search tables...",
                             ).props("dense outlined").classes("q-mr-sm").style(
                                 "width: 250px"
                             )
-                            
+
                         # Autocomplete dropdown container
                         autocomplete_container = ui.column().classes(
                             "w-full"
@@ -346,7 +346,7 @@ def query_workspace():
                         ).classes("w-full").style(
                             "flex: 1; overflow: auto"
                         )
-                        
+
                         # Define insert handler
                         def insert_table_path(table_path: str):
                             """Insert table path into editor at cursor position."""
@@ -359,18 +359,18 @@ def query_workspace():
                                 editor.value = f"{current}{table_path} "
                             editor.update()
                             ui.notify(f"Inserted: {table_path}", type="positive")
-                        
+
                         # Autocomplete functionality
                         def show_autocomplete_results(search_query: str):
                             """Show autocomplete dropdown with matching tables."""
                             autocomplete_container.clear()
-                            
+
                             if not search_query or len(search_query) < 2:
                                 return
-                            
+
                             try:
                                 results = manager.search_tables(search_query)
-                                
+
                                 if results:
                                     with autocomplete_container:
                                         with ui.card().classes(
@@ -385,7 +385,7 @@ def query_workspace():
                                             ui.label(
                                                 f"{len(results)} table(s) found"
                                             ).classes("text-caption text-grey q-pa-xs")
-                                            
+
                                             for result in results:
                                                 def make_insert_handler(full_name):
                                                     def handler():
@@ -393,7 +393,7 @@ def query_workspace():
                                                         autocomplete_container.clear()
                                                         search_input.value = ""
                                                     return handler
-                                                
+
                                                 with ui.row().classes(
                                                     "w-full items-center gap-2 cursor-pointer"
                                                 ).on(
@@ -409,22 +409,22 @@ def query_workspace():
                                                     ui.badge(
                                                         f"{result['column_count']} cols"
                                                     ).props("color=grey")
-                            except Exception as e:
+                            except Exception:
                                 # Silently fail to avoid disrupting the UI
                                 pass
-                        
+
                         # Wire up search input
                         search_input.on(
                             "update:model-value",
                             lambda e: show_autocomplete_results(e.args)
                         )
-                        
+
                         # Clear autocomplete when clicking outside
                         def clear_autocomplete():
                             autocomplete_container.clear()
-                        
+
                         editor.on("focus", clear_autocomplete)
-                        
+
                         # Build tree with insert handler
                         with tree_placeholder:
                             _build_catalog_tree(on_insert_path=insert_table_path)

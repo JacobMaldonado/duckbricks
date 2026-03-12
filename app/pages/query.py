@@ -7,7 +7,7 @@ from app.services.ducklake import manager
 
 def _build_catalog_tree(on_insert_path=None) -> ui.tree:
     """Build the catalog hierarchy tree with lazy loading.
-    
+
     Args:
         on_insert_path: Optional callback(table_path: str) for inserting table paths.
     """
@@ -137,7 +137,7 @@ def _find_node(
 
 def _render_results(results_container, result: dict, sql_query: str = ""):
     """Render query results using AG Grid with typed headers.
-    
+
     Args:
         results_container: Container to render results in
         result: Query result dict

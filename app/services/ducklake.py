@@ -259,12 +259,12 @@ class DuckLakeManager:
 
     def export_results_to_csv(self, sql: str) -> bytes:
         """Execute query and return results as CSV bytes.
-        
+
         Uses streaming to handle large result sets efficiently.
-        
+
         Args:
             sql: SQL query to execute
-            
+
         Returns:
             CSV data as bytes
         """
@@ -296,10 +296,10 @@ class DuckLakeManager:
 
     def get_table_details(self, full_table_name: str) -> dict:
         """Get detailed table information including partitioning, constraints, stats.
-        
+
         Args:
             full_table_name: catalog.schema.table
-            
+
         Returns:
             {
                 "partitions": [...],
@@ -367,7 +367,7 @@ class DuckLakeManager:
 
     def get_table_history(self, full_table_name: str) -> list[dict]:
         """Get time travel history for a table (DuckLake versions).
-        
+
         Returns:
             [
                 {
@@ -390,14 +390,14 @@ class DuckLakeManager:
 
     def search_tables(self, query: str) -> list[dict]:
         """Search for tables matching query string.
-        
+
         Returns list of dicts with:
             - full_name: str (catalog.schema.table)
             - catalog: str
             - schema: str
             - table: str
             - column_count: int
-        
+
         Args:
             query: Search string to match against table names
         """
@@ -411,14 +411,14 @@ class DuckLakeManager:
             # Use parameterized query to avoid SQL injection
             # and search across all catalogs
             sql = """
-                SELECT 
+                SELECT
                     table_catalog || '.' || table_schema || '.' || table_name as full_name,
                     table_catalog,
                     table_schema,
                     table_name,
-                    (SELECT COUNT(*) FROM information_schema.columns c 
-                     WHERE c.table_catalog = t.table_catalog 
-                       AND c.table_schema = t.table_schema 
+                    (SELECT COUNT(*) FROM information_schema.columns c
+                     WHERE c.table_catalog = t.table_catalog
+                       AND c.table_schema = t.table_schema
                        AND c.table_name = t.table_name) as column_count
                 FROM information_schema.tables t
                 WHERE LOWER(table_name) LIKE LOWER(?)

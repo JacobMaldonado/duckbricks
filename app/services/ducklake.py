@@ -1,5 +1,7 @@
 """DuckDB + DuckLake connection manager."""
 
+import csv
+import io
 import os
 import threading
 
@@ -254,6 +256,193 @@ class DuckLakeManager:
                     for col in col_info
                 ],
             }
+
+    def export_results_to_csv(self, sql: str) -> bytes:
+        """Execute query and return results as CSV bytes.
+        
+        Uses streaming to handle large result sets efficiently.
+        
+        Args:
+            sql: SQL query to execute
+            
+        Returns:
+            CSV data as bytes
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        with self._lock:
+            result = self._conn.execute(sql)
+            
+            # Create CSV in memory
+            output = io.StringIO()
+            writer = csv.writer(output)
+            
+            # Write header
+            columns = [desc[0] for desc in result.description]
+            writer.writerow(columns)
+            
+            # Write rows (fetch in batches for large results)
+            batch_size = 10000
+            while True:
+                rows = result.fetchmany(batch_size)
+                if not rows:
+                    break
+                for row in rows:
+                    writer.writerow(row)
+            
+            # Convert to bytes
+            return output.getvalue().encode('utf-8')
+
+    def get_table_details(self, full_table_name: str) -> dict:
+        """Get detailed table information including partitioning, constraints, stats.
+        
+        Args:
+            full_table_name: catalog.schema.table
+            
+        Returns:
+            {
+                "partitions": [...],
+                "constraints": [...],
+                "file_count": int,
+                "table_size_bytes": int,
+                "row_count": int,
+                "last_modified": str (ISO timestamp) or None
+            }
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        parts = full_table_name.split(".")
+        if len(parts) != 3:
+            raise ValueError(
+                "Invalid table name format. Expected: catalog.schema.table"
+            )
+        
+        catalog, schema, table = parts
+        
+        with self._lock:
+            # Get row count
+            try:
+                count_result = self._conn.execute(
+                    f'SELECT COUNT(*) FROM "{catalog}"."{schema}"."{table}"'
+                ).fetchone()
+                row_count = count_result[0] if count_result else 0
+            except Exception:
+                row_count = -1
+            
+            # Get constraints (simplified - DuckDB info_schema support)
+            constraints = []
+            try:
+                constraint_info = self._conn.execute(
+                    f"""
+                    SELECT constraint_type, constraint_name
+                    FROM information_schema.table_constraints
+                    WHERE table_catalog = '{catalog}'
+                      AND table_schema = '{schema}'
+                      AND table_name = '{table}'
+                    """
+                ).fetchall()
+                constraints = [
+                    {
+                        "type": row[0],
+                        "name": row[1],
+                        "definition": f"{row[0]} constraint"
+                    }
+                    for row in constraint_info
+                ]
+            except Exception:
+                # Not all databases support this
+                pass
+            
+            # Placeholder values for features not yet implemented
+            return {
+                "partitions": [],  # TODO: Query DuckLake partitioning info
+                "constraints": constraints,
+                "file_count": 0,    # TODO: Query DuckLake file metadata
+                "table_size_bytes": 0,  # TODO: Sum file sizes
+                "row_count": row_count,
+                "last_modified": None  # TODO: Query last write timestamp
+            }
+
+    def get_table_history(self, full_table_name: str) -> list[dict]:
+        """Get time travel history for a table (DuckLake versions).
+        
+        Returns:
+            [
+                {
+                    "version_id": str,
+                    "timestamp": str (ISO),
+                    "is_current": bool
+                },
+                ...
+            ]
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        # Note: This depends on DuckLake's versioning implementation
+        # DuckLake uses Iceberg-like versioning
+        # This is a placeholder until DuckLake exposes version history
+        
+        # TODO: Query DuckLake version history when API is available
+        return []
+
+    def search_tables(self, query: str) -> list[dict]:
+        """Search for tables matching query string.
+        
+        Returns list of dicts with:
+            - full_name: str (catalog.schema.table)
+            - catalog: str
+            - schema: str
+            - table: str
+            - column_count: int
+        
+        Args:
+            query: Search string to match against table names
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        if not query or len(query) < 1:
+            return []
+        
+        with self._lock:
+            # Use parameterized query to avoid SQL injection
+            # and search across all catalogs
+            sql = """
+                SELECT 
+                    table_catalog || '.' || table_schema || '.' || table_name as full_name,
+                    table_catalog,
+                    table_schema,
+                    table_name,
+                    (SELECT COUNT(*) FROM information_schema.columns c 
+                     WHERE c.table_catalog = t.table_catalog 
+                       AND c.table_schema = t.table_schema 
+                       AND c.table_name = t.table_name) as column_count
+                FROM information_schema.tables t
+                WHERE LOWER(table_name) LIKE LOWER(?)
+                ORDER BY table_name
+                LIMIT 10
+            """
+            
+            try:
+                result = self._conn.execute(
+                    sql, [f"%{query}%"]
+                ).fetchall()
+                
+                return [
+                    {
+                        "full_name": row[0],
+                        "catalog": row[1],
+                        "schema": row[2],
+                        "table": row[3],
+                        "column_count": row[4]
+                    }
+                    for row in result
+                ]
+            except Exception:
+                return []
 
 
 # Singleton

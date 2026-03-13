@@ -82,7 +82,10 @@ def _render_details_tab(table_name: str, details_container: ui.column):
     details_container.clear()
 
     try:
-        details = manager.get_table_details(table_name)
+        # Get the full qualified table name for get_table_details
+        from app.config import DUCKLAKE_NAME
+        full_table_name = f"{DUCKLAKE_NAME}.main.{table_name}"
+        details = manager.get_table_details(full_table_name)
     except Exception as e:
         with details_container:
             ui.label(f"Error loading details: {e}").classes(

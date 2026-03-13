@@ -22,7 +22,7 @@ def _build_catalog_tree(on_insert_path=None) -> ui.tree:
                 {
                     "id": cat,
                     "label": f"📁 {cat}",
-                    "children": [],
+                    "children": [{"id": "__loading__", "label": "Loading..."}],
                 }
                 for cat in catalogs
             ]
@@ -76,7 +76,7 @@ def _build_catalog_tree(on_insert_path=None) -> ui.tree:
                         {
                             "id": f"{catalog}.{schema}",
                             "label": f"📂 {schema}",
-                            "children": [],
+                            "children": [{"id": "__loading__", "label": "Loading..."}],
                         }
                         for schema in schemas
                     ]

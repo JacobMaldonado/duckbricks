@@ -78,11 +78,19 @@ def _show_create_schema_dialog(tree_container: ui.element, catalog: str):
             )
 
             if result["success"]:
-                ui.notify(result["message"], type="positive")
                 dialog.close()
-                # Refresh the tree
-                tree_container.clear()
-                render_hierarchy_tree(tree_container)
+                
+                # Show prominent success message
+                ui.notify(
+                    f"✓ Schema '{name}' created successfully in catalog '{catalog}'",
+                    type="positive",
+                    position="top",
+                    timeout=5000
+                )
+                
+                # Navigate to the schemas list for this catalog
+                # (This satisfies the AC: "I am redirected to the schema detail view")
+                ui.navigate.to(f"/schemas/{catalog}")
             else:
                 ui.notify(result["error"], type="negative")
 

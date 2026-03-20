@@ -7,6 +7,7 @@ from app.config import CATALOG_PATH, HOST, PORT
 from app.pages.catalogs import catalogs_page
 from app.pages.explorer import explorer_page
 from app.pages.query import query_workspace
+from app.pages.schemas import schemas_page
 from app.services.ducklake import manager
 
 
@@ -50,6 +51,12 @@ def explorer():
 def query():
     """SQL Query Workspace."""
     query_workspace()
+
+
+@ui.page("/schemas/{catalog}")
+def schemas(catalog: str):
+    """Schemas list view for a specific catalog."""
+    schemas_page(catalog)
 
 
 if __name__ == "__main__":

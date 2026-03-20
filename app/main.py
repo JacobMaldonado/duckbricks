@@ -11,11 +11,20 @@ from app.services.ducklake import manager
 
 def startup():
     """Auto-initialize metastore on startup if catalog already exists."""
+    # Log data directory location on startup
+    data_dir = os.path.dirname(CATALOG_PATH)
+    print(f"📁 DuckBricks data directory: {data_dir}")
+    print(f"   Catalog: {CATALOG_PATH}")
+    print(f"   Data path: {os.path.dirname(CATALOG_PATH)}/parquet/")
+    
     if os.path.exists(CATALOG_PATH):
         try:
             manager.initialize()
+            print("✅ Metastore initialized successfully")
         except Exception as e:
-            print(f"Warning: Could not auto-attach existing metastore: {e}")
+            print(f"⚠️  Warning: Could not auto-attach existing metastore: {e}")
+    else:
+        print("ℹ️  No existing metastore found. Create a catalog to initialize.")
 
 
 app.on_startup(startup)

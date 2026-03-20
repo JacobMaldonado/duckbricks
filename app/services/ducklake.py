@@ -255,6 +255,56 @@ class DuckLakeManager:
                 ],
             }
 
+    def get_schema_details(self, catalog: str, schema: str) -> dict:
+        """Get detailed information about a schema including table count.
+        
+        Returns:
+            dict with keys: name, table_count
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        with self._lock:
+            # Count tables in schema
+            table_count_result = self._conn.execute(
+                f"SELECT COUNT(*) FROM information_schema.tables "
+                f"WHERE table_catalog = '{catalog}' AND table_schema = '{schema}'"
+            ).fetchone()
+            
+            table_count = table_count_result[0] if table_count_result else 0
+            
+            return {
+                "name": schema,
+                "table_count": table_count,
+            }
+
+    def get_catalog_stats(self, catalog: str) -> dict:
+        """Get statistics for a catalog.
+        
+        Returns:
+            dict with keys: schema_count, total_tables
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        with self._lock:
+            # Count schemas
+            schema_count_result = self._conn.execute(
+                f"SELECT COUNT(*) FROM information_schema.schemata "
+                f"WHERE catalog_name = '{catalog}'"
+            ).fetchone()
+            
+            # Count total tables across all schemas
+            table_count_result = self._conn.execute(
+                f"SELECT COUNT(*) FROM information_schema.tables "
+                f"WHERE table_catalog = '{catalog}'"
+            ).fetchone()
+            
+            return {
+                "schema_count": schema_count_result[0] if schema_count_result else 0,
+                "total_tables": table_count_result[0] if table_count_result else 0,
+            }
+
 
 # Singleton
 manager = DuckLakeManager()

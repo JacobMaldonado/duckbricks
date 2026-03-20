@@ -6,6 +6,7 @@ from nicegui import app, ui
 from app.config import CATALOG_PATH, HOST, PORT
 from app.pages.explorer import explorer_page
 from app.pages.query import query_workspace
+from app.pages.schemas import schemas_page
 from app.services.ducklake import manager
 
 
@@ -37,6 +38,12 @@ def explorer():
 def query():
     """SQL Query Workspace."""
     query_workspace()
+
+
+@ui.page("/schemas/{catalog}")
+def schemas(catalog: str):
+    """View schemas within a catalog."""
+    schemas_page(catalog)
 
 
 if __name__ == "__main__":

@@ -255,6 +255,68 @@ class DuckLakeManager:
                 ],
             }
 
+    def create_catalog(self, name: str, description: str = "", storage_path: str = "") -> dict:
+        """Create a new catalog in DuckLake.
+
+        Args:
+            name: Catalog name (lowercase, alphanumeric, underscores only)
+            description: Optional catalog description (metadata only, for future use)
+            storage_path: Optional custom storage location (defaults to DATA_PATH/<catalog>)
+
+        Returns:
+            dict with success status and message/error
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        # Validate catalog name
+        if not name or not name.replace("_", "").isalnum() or not name.islower():
+            return {
+                "success": False,
+                "error": "Catalog name must be lowercase alphanumeric with underscores only"
+            }
+
+        with self._lock:
+            try:
+                # Check if catalog already exists
+                existing = self._conn.execute("SHOW DATABASES").fetchall()
+                if any(row[0] == name for row in existing):
+                    return {
+                        "success": False,
+                        "error": f"Catalog '{name}' already exists"
+                    }
+
+                # Create a new DuckLake catalog by attaching a new catalog file
+                # Determine storage paths
+                catalog_dir = os.path.dirname(CATALOG_PATH)
+                catalog_file = os.path.join(catalog_dir, f"{name}.ducklake")
+                
+                if storage_path:
+                    data_path = storage_path
+                else:
+                    data_path = os.path.join(DATA_PATH, name)
+                
+                # Ensure directories exist
+                os.makedirs(catalog_dir, exist_ok=True)
+                os.makedirs(data_path, exist_ok=True)
+                
+                # Attach the new DuckLake catalog
+                self._conn.execute(
+                    f"ATTACH 'ducklake:{catalog_file}' AS {name} "
+                    f"(DATA_PATH '{data_path}')"
+                )
+
+                return {
+                    "success": True,
+                    "message": f"Catalog '{name}' created successfully"
+                }
+
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+
 
 # Singleton
 manager = DuckLakeManager()

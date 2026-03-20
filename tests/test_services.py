@@ -244,3 +244,60 @@ def test_create_schema_prevents_duplicates():
         finally:
             ducklake_module.CATALOG_PATH = original_catalog
             ducklake_module.DATA_PATH = original_data
+
+
+def test_get_catalog_details():
+    """Getting catalog details should return schema and table counts."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        manager = DuckLakeManager()
+        import app.services.ducklake as ducklake_module
+        original_catalog = ducklake_module.CATALOG_PATH
+        original_data = ducklake_module.DATA_PATH
+
+        try:
+            ducklake_module.CATALOG_PATH = os.path.join(tmpdir, "test.ducklake")
+            ducklake_module.DATA_PATH = os.path.join(tmpdir, "data")
+            manager.initialize()
+
+            # Create catalog and schema
+            manager.create_catalog("testcat")
+            manager.create_schema("testcat", "public")
+
+            # Get details
+            details = manager.get_catalog_details("testcat")
+            assert details["name"] == "testcat"
+            assert details["schema_count"] >= 1  # At least our schema (may include defaults)
+            assert details["table_count"] == 0
+
+        finally:
+            ducklake_module.CATALOG_PATH = original_catalog
+            ducklake_module.DATA_PATH = original_data
+
+
+def test_get_metastore_stats():
+    """Getting metastore stats should return total counts."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        manager = DuckLakeManager()
+        import app.services.ducklake as ducklake_module
+        original_catalog = ducklake_module.CATALOG_PATH
+        original_data = ducklake_module.DATA_PATH
+
+        try:
+            ducklake_module.CATALOG_PATH = os.path.join(tmpdir, "test.ducklake")
+            ducklake_module.DATA_PATH = os.path.join(tmpdir, "data")
+            manager.initialize()
+
+            # Create catalogs and schemas
+            manager.create_catalog("cat1")
+            manager.create_schema("cat1", "public")
+            manager.create_catalog("cat2")
+            manager.create_schema("cat2", "staging")
+
+            # Get stats
+            stats = manager.get_metastore_stats()
+            assert stats["total_catalogs"] == 3  # cat1, cat2, duckbricks (default)
+            assert stats["total_schemas"] >= 2  # at least public and staging
+
+        finally:
+            ducklake_module.CATALOG_PATH = original_catalog
+            ducklake_module.DATA_PATH = original_data

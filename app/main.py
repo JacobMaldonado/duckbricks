@@ -4,6 +4,7 @@ import os
 from nicegui import app, ui
 
 from app.config import CATALOG_PATH, HOST, PORT
+from app.pages.catalogs import catalogs_page
 from app.pages.explorer import explorer_page
 from app.pages.query import query_workspace
 from app.services.ducklake import manager
@@ -23,8 +24,14 @@ app.on_startup(startup)
 
 @ui.page("/")
 def index():
-    """Root redirects to explorer."""
-    ui.navigate.to("/explorer")
+    """Root redirects to catalogs list."""
+    ui.navigate.to("/catalogs")
+
+
+@ui.page("/catalogs")
+def catalogs():
+    """Catalogs List view."""
+    catalogs_page()
 
 
 @ui.page("/explorer")

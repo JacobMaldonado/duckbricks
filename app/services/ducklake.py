@@ -12,7 +12,7 @@ class DuckLakeManager:
     """Manages the DuckDB connection with DuckLake metastore."""
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # Use RLock for reentrant locking
         self._conn: duckdb.DuckDBPyConnection | None = None
         self._initialized = False
 
@@ -138,6 +138,67 @@ class DuckLakeManager:
                 if row[0] not in excluded
                 and not row[0].startswith("__ducklake_metadata_")
             ]
+
+    def get_catalog_details(self, catalog: str) -> dict:
+        """Get detailed information about a catalog.
+
+        Args:
+            catalog: Catalog name
+
+        Returns:
+            dict with catalog metadata including schema count
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        with self._lock:
+            try:
+                # Get schema count
+                schemas = self.list_schemas(catalog)
+                schema_count = len(schemas)
+
+                # Get total table count across all schemas
+                table_count = 0
+                for schema in schemas:
+                    tables = self.list_tables_in_schema(catalog, schema)
+                    table_count += len(tables)
+
+                return {
+                    "name": catalog,
+                    "schema_count": schema_count,
+                    "table_count": table_count,
+                }
+            except Exception as e:
+                return {
+                    "name": catalog,
+                    "schema_count": 0,
+                    "table_count": 0,
+                    "error": str(e)
+                }
+
+    def get_metastore_stats(self) -> dict:
+        """Get overall metastore statistics.
+
+        Returns:
+            dict with total counts of catalogs, schemas, and tables
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        catalogs = self.list_catalogs()
+        total_schemas = 0
+        total_tables = 0
+
+        for catalog in catalogs:
+            details = self.get_catalog_details(catalog)
+            total_schemas += details.get("schema_count", 0)
+            total_tables += details.get("table_count", 0)
+
+        return {
+            "total_catalogs": len(catalogs),
+            "total_schemas": total_schemas,
+            "total_tables": total_tables
+        }
 
     def list_schemas(self, catalog: str) -> list[str]:
         """List schemas within a catalog."""

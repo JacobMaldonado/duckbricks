@@ -6,6 +6,91 @@ from app.components.layout import layout_frame
 from app.services.ducklake import manager
 
 
+def _show_create_schema_dialog(tree_container: ui.element, catalog: str):
+    """Show the create schema modal dialog."""
+    schema_name = ""
+    description = ""
+
+    with ui.dialog() as dialog, ui.card().classes("w-full").style("min-width: 500px; max-width: 600px"):
+        # Dialog header
+        with ui.row().classes("w-full items-center justify-between q-pb-md").style(
+            "border-bottom: 1px solid #E5E5E5"
+        ):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("folder", size="24px").classes("text-primary")
+                ui.label("Create New Schema").classes("text-h6 text-weight-medium")
+            ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+
+        # Dialog body
+        with ui.column().classes("w-full gap-4 q-py-md"):
+            # Catalog context
+            with ui.card().classes("bg-grey-1"):
+                with ui.row().classes("items-center gap-2 q-pa-sm"):
+                    ui.icon("storage", size="20px").classes("text-grey-7")
+                    ui.label("Creating schema in:").classes("text-caption text-grey-7")
+                    ui.label(catalog).classes("text-caption text-weight-medium")
+
+            # Schema name
+            ui.label("Schema Name *").classes("text-body2 text-weight-medium")
+            name_input = ui.input(
+                placeholder="e.g., public, staging, analytics"
+            ).props('outlined dense').classes("w-full")
+            ui.label(
+                "Use lowercase letters, numbers, and underscores only"
+            ).classes("text-caption text-grey-7 q-mt-n3")
+
+            # Description
+            ui.label("Description (optional)").classes("text-body2 text-weight-medium q-mt-sm")
+            desc_input = ui.textarea(
+                placeholder="Brief description of this schema's purpose..."
+            ).props('outlined').classes("w-full").style("min-height: 80px")
+
+            # Info callout
+            with ui.card().classes("bg-blue-1 q-mt-sm").style("border-left: 3px solid #0066CC"):
+                with ui.row().classes("items-start gap-2 q-pa-sm"):
+                    ui.icon("info", size="20px").classes("text-primary q-mt-1")
+                    with ui.column().classes("flex-grow"):
+                        ui.label("Schema Guidelines").classes("text-caption text-weight-medium")
+                        ui.label(
+                            "• Must be unique within the catalog\n"
+                            "• Use schemas to organize related tables\n"
+                            "• Common examples: public, staging, analytics"
+                        ).classes("text-caption text-grey-8").style("white-space: pre-line")
+
+        # Dialog footer
+        with ui.row().classes("w-full justify-end gap-2 q-pt-md").style(
+            "border-top: 1px solid #E5E5E5"
+        ):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            create_btn = ui.button("Create Schema", icon="add").classes("bg-primary text-white")
+
+        # Handle create action
+        async def handle_create():
+            name = name_input.value.strip()
+            if not name:
+                ui.notify("Schema name is required", type="warning")
+                return
+
+            result = manager.create_schema(
+                catalog=catalog,
+                name=name,
+                description=desc_input.value.strip()
+            )
+
+            if result["success"]:
+                ui.notify(result["message"], type="positive")
+                dialog.close()
+                # Refresh the tree
+                tree_container.clear()
+                render_hierarchy_tree(tree_container)
+            else:
+                ui.notify(result["error"], type="negative")
+
+        create_btn.on_click(handle_create)
+
+    dialog.open()
+
+
 def _show_create_catalog_dialog(tree_container: ui.element):
     """Show the create catalog modal dialog."""
     catalog_name = ""
@@ -242,12 +327,39 @@ def explorer_page():
                         "text-subtitle2 text-grey q-pa-md"
                     )
 
-        # Render the hierarchy tree with table selection callback
-        def handle_table_selection(table_name: str):
-            """Handle table selection from hierarchy tree."""
-            _render_schema(schema_container, table_name)
+        # Render the hierarchy tree with selection callbacks
+        def handle_selection(node_id: str):
+            """Handle node selection from hierarchy tree."""
+            parts = node_id.split(".")
+            schema_container.clear()
+            
+            if len(parts) == 1:
+                # Catalog selected - show catalog info and create schema button
+                with schema_container:
+                    ui.label(f"Catalog: {parts[0]}").classes("text-h5 q-mb-sm q-pa-md")
+                    ui.label("Select a table to view its schema, or create a new schema below.").classes(
+                        "text-caption text-grey q-pa-md"
+                    )
+                    ui.button(
+                        "Create Schema",
+                        icon="add",
+                        on_click=lambda: _show_create_schema_dialog(tree_container, parts[0])
+                    ).classes("bg-primary text-white q-ml-md q-mb-md")
+            
+            elif len(parts) == 2:
+                # Schema selected - show schema info
+                catalog, schema = parts
+                with schema_container:
+                    ui.label(f"Schema: {catalog}.{schema}").classes("text-h5 q-mb-sm q-pa-md")
+                    ui.label("Select a table to view its schema.").classes(
+                        "text-caption text-grey q-pa-md"
+                    )
+            
+            elif len(parts) == 3:
+                # Table selected - show table schema
+                _render_schema(schema_container, node_id)
 
         render_hierarchy_tree(
             tree_container,
-            on_table_select=handle_table_selection
+            on_select=handle_selection
         )

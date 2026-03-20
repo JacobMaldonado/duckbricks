@@ -255,6 +255,62 @@ class DuckLakeManager:
                 ],
             }
 
+    def create_schema(self, catalog: str, name: str, description: str = "") -> dict:
+        """Create a new schema within a catalog.
+
+        Args:
+            catalog: Catalog name where the schema will be created
+            name: Schema name (lowercase, alphanumeric, underscores only)
+            description: Optional schema description (for future use)
+
+        Returns:
+            dict with success status and message/error
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+
+        # Validate schema name
+        if not name or not name.replace("_", "").isalnum() or not name.islower():
+            return {
+                "success": False,
+                "error": "Schema name must be lowercase alphanumeric with underscores only"
+            }
+
+        with self._lock:
+            try:
+                # Check if catalog exists
+                catalogs = self._conn.execute("SHOW DATABASES").fetchall()
+                if not any(row[0] == catalog for row in catalogs):
+                    return {
+                        "success": False,
+                        "error": f"Catalog '{catalog}' does not exist"
+                    }
+
+                # Check if schema already exists
+                existing_schemas = self._conn.execute(
+                    f"SELECT schema_name FROM information_schema.schemata "
+                    f"WHERE catalog_name = '{catalog}'"
+                ).fetchall()
+                if any(row[0] == name for row in existing_schemas):
+                    return {
+                        "success": False,
+                        "error": f"Schema '{name}' already exists in catalog '{catalog}'"
+                    }
+
+                # Create the schema
+                self._conn.execute(f"CREATE SCHEMA {catalog}.{name}")
+
+                return {
+                    "success": True,
+                    "message": f"Schema '{name}' created successfully in catalog '{catalog}'"
+                }
+
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+
     def create_catalog(self, name: str, description: str = "", storage_path: str = "") -> dict:
         """Create a new catalog in DuckLake.
 

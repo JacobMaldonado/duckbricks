@@ -29,6 +29,7 @@ def _make_loading_child(parent_id: str) -> dict:
 def render_hierarchy_tree(
     container: ui.element,
     on_table_select: Callable[[str], None] | None = None,
+    on_select: Callable[[str], None] | None = None,
     ducklake_manager: DuckLakeManager | None = None,
 ) -> ui.tree:
     """Render catalog -> schema -> table hierarchy with on-demand loading.
@@ -39,7 +40,8 @@ def render_hierarchy_tree(
 
     Args:
         container: NiceGUI element to render into.
-        on_table_select: Optional callback(fully_qualified_table_name).
+        on_table_select: Optional callback(fully_qualified_table_name). Deprecated, use on_select.
+        on_select: Optional callback(node_id) for any node selection.
         ducklake_manager: DuckLakeManager instance (defaults to singleton).
 
     Returns:
@@ -173,13 +175,23 @@ def render_hierarchy_tree(
 
     # -- select handler ---------------------------------------------
     def _handle_select(e) -> None:
-        if not on_table_select or not e.value:
+        if not e.value:
             return
         key = e.value
-        parts = key.split(".")
-        # only fire for table-level nodes (catalog.schema.table)
-        if len(parts) == 3 and not key.endswith("__empty__"):
-            on_table_select(key)
+        
+        # Skip placeholder/error nodes
+        if key.startswith("__"):
+            return
+        
+        # Call the generic on_select if provided
+        if on_select:
+            on_select(key)
+        # Fall back to on_table_select for backward compatibility
+        elif on_table_select:
+            parts = key.split(".")
+            # only fire for table-level nodes (catalog.schema.table)
+            if len(parts) == 3:
+                on_table_select(key)
 
     return tree
 

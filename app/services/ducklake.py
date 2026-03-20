@@ -255,6 +255,91 @@ class DuckLakeManager:
                 ],
             }
 
+    def get_table_details(self, catalog: str, schema: str, table: str) -> dict:
+        """Get detailed information about a specific table.
+        
+        Returns:
+            dict with keys: name, row_count, column_count, size_bytes (estimated)
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        with self._lock:
+            # Get column count
+            col_count_result = self._conn.execute(
+                f"SELECT COUNT(*) FROM information_schema.columns "
+                f"WHERE table_catalog = '{catalog}' "
+                f"AND table_schema = '{schema}' "
+                f"AND table_name = '{table}'"
+            ).fetchone()
+            
+            column_count = col_count_result[0] if col_count_result else 0
+            
+            # Get row count (try to query the actual table)
+            try:
+                row_count_result = self._conn.execute(
+                    f'SELECT COUNT(*) FROM "{catalog}"."{schema}"."{table}"'
+                ).fetchone()
+                row_count = row_count_result[0] if row_count_result else 0
+            except Exception:
+                row_count = 0
+            
+            # Estimate size (this is approximate - DuckDB doesn't expose file sizes directly)
+            # We'll return -1 to indicate unavailable for now
+            size_bytes = -1
+            
+            return {
+                "name": table,
+                "row_count": row_count,
+                "column_count": column_count,
+                "size_bytes": size_bytes,
+            }
+
+    def get_schema_table_stats(self, catalog: str, schema: str) -> dict:
+        """Get aggregate statistics for all tables in a schema.
+        
+        Returns:
+            dict with keys: table_count, total_rows
+        """
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        
+        with self._lock:
+            # Count tables
+            table_count_result = self._conn.execute(
+                f"SELECT COUNT(*) FROM information_schema.tables "
+                f"WHERE table_catalog = '{catalog}' AND table_schema = '{schema}'"
+            ).fetchone()
+            
+            table_count = table_count_result[0] if table_count_result else 0
+            
+            # Get table names directly within the lock (not via list_tables_in_schema to avoid deadlock)
+            table_names_result = self._conn.execute(
+                f"SELECT table_name FROM information_schema.tables "
+                f"WHERE table_catalog = '{catalog}' "
+                f"AND table_schema = '{schema}'"
+            ).fetchall()
+            table_names = [row[0] for row in table_names_result]
+            
+            # Calculate total rows across all tables (note: this can be slow for many tables)
+            total_rows = 0
+            
+            for table in table_names:
+                try:
+                    row_result = self._conn.execute(
+                        f'SELECT COUNT(*) FROM "{catalog}"."{schema}"."{table}"'
+                    ).fetchone()
+                    if row_result:
+                        total_rows += row_result[0]
+                except Exception:
+                    # Skip tables that can't be counted
+                    pass
+            
+            return {
+                "table_count": table_count,
+                "total_rows": total_rows,
+            }
+
 
 # Singleton
 manager = DuckLakeManager()

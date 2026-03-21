@@ -1,6 +1,7 @@
 """Metastore Explorer page."""
 from nicegui import ui
 
+from app.components.create_table_modal import show_create_table_dialog
 from app.components.hierarchy_tree import render_hierarchy_tree
 from app.components.layout import layout_frame
 from app.services.ducklake import manager
@@ -139,7 +140,11 @@ def explorer_page():
 
         # === RIGHT PANEL: Schema Details ===
         with splitter.after:
-            with ui.scroll_area().classes("w-full h-full"):
+            # Header with actions
+            action_bar = ui.row().classes("w-full items-center justify-between q-pa-sm bg-grey-2")
+            action_bar.style("min-height: 40px; border-bottom: 1px solid #E5E5E5")
+            
+            with ui.scroll_area().classes("w-full").style("flex: 1"):
                 schema_container = ui.column().classes("w-full")
                 with schema_container:
                     ui.label(
@@ -148,12 +153,80 @@ def explorer_page():
                         "text-subtitle2 text-grey q-pa-md"
                     )
 
-        # Render the hierarchy tree with table selection callback
-        def handle_table_selection(table_name: str):
-            """Handle table selection from hierarchy tree."""
-            _render_schema(schema_container, table_name)
+        # State tracking
+        selected_context = {"catalog": None, "schema": None, "type": None}
 
-        render_hierarchy_tree(
-            tree_container,
-            on_table_select=handle_table_selection
-        )
+        def refresh_tree():
+            """Refresh the tree after changes."""
+            tree_container.clear()
+            render_tree()
+
+        def render_tree():
+            """Render the hierarchy tree with selection callbacks."""
+            def handle_selection(tree_event):
+                """Handle any node selection from hierarchy tree."""
+                if not tree_event.value:
+                    return
+                
+                key = tree_event.value
+                parts = key.split(".")
+                
+                # Update action bar based on selection
+                action_bar.clear()
+                with action_bar:
+                    ui.label("").classes("flex-grow")  # Spacer
+                
+                if len(parts) == 1:
+                    # Catalog selected
+                    selected_context["catalog"] = parts[0]
+                    selected_context["schema"] = None
+                    selected_context["type"] = "catalog"
+                    
+                elif len(parts) == 2:
+                    # Schema selected
+                    catalog, schema = parts
+                    selected_context["catalog"] = catalog
+                    selected_context["schema"] = schema
+                    selected_context["type"] = "schema"
+                    
+                    # Show create table button
+                    with action_bar:
+                        ui.label(f"{catalog}.{schema}").classes("text-caption text-grey-7")
+                        ui.space()
+                        
+                        async def open_create_table():
+                            await show_create_table_dialog(
+                                catalog=catalog,
+                                schema=schema,
+                                on_success=refresh_tree
+                            )
+                        
+                        ui.button(
+                            "Create Table",
+                            icon="add",
+                            on_click=open_create_table
+                        ).props("flat dense color=primary")
+                    
+                elif len(parts) == 3:
+                    # Table selected
+                    catalog, schema, table = parts
+                    selected_context["catalog"] = catalog
+                    selected_context["schema"] = schema
+                    selected_context["type"] = "table"
+                    
+                    # Show table info and render schema
+                    _render_schema(schema_container, key)
+
+            def handle_table_selection(table_name: str):
+                """Handle table selection from hierarchy tree."""
+                _render_schema(schema_container, table_name)
+
+            # Render the tree
+            render_hierarchy_tree(
+                tree_container,
+                on_table_select=handle_table_selection,
+                on_select=handle_selection
+            )
+
+        # Initial render
+        render_tree()

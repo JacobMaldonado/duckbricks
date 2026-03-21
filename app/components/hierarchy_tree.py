@@ -29,6 +29,7 @@ def _make_loading_child(parent_id: str) -> dict:
 def render_hierarchy_tree(
     container: ui.element,
     on_table_select: Callable[[str], None] | None = None,
+    on_select: Callable[[object], None] | None = None,
     ducklake_manager: DuckLakeManager | None = None,
 ) -> ui.tree:
     """Render catalog -> schema -> table hierarchy with on-demand loading.
@@ -39,7 +40,8 @@ def render_hierarchy_tree(
 
     Args:
         container: NiceGUI element to render into.
-        on_table_select: Optional callback(fully_qualified_table_name).
+        on_table_select: Optional callback(fully_qualified_table_name) for table selection.
+        on_select: Optional callback(event) for any node selection.
         ducklake_manager: DuckLakeManager instance (defaults to singleton).
 
     Returns:
@@ -173,6 +175,11 @@ def render_hierarchy_tree(
 
     # -- select handler ---------------------------------------------
     def _handle_select(e) -> None:
+        # Fire generic select callback if provided
+        if on_select:
+            on_select(e)
+        
+        # Also fire table-specific callback for backward compatibility
         if not on_table_select or not e.value:
             return
         key = e.value

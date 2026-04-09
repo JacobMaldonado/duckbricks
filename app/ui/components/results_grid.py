@@ -6,7 +6,7 @@ from nicegui import ui
 class ResultsGrid:
     """Renders SQL query results into an AG Grid."""
 
-    def render(self, container: ui.element, result: dict) -> None:
+    def render(self, container: ui.element, result: dict, auto_height: bool = False) -> None:
         """Clear container and render result dict from QueryEngine.execute_typed()."""
         container.clear()
         with container:
@@ -47,13 +47,15 @@ class ResultsGrid:
                 {name: str(val) if val is not None else "" for name, val in zip(col_names, row)}
                 for row in rows
             ]
+            dom_layout = "autoHeight" if auto_height else "normal"
+            grid_style = "width: 100%" if auto_height else "height: 100%"
             ui.aggrid(
                 options={
                     "columnDefs": col_defs,
                     "rowData": row_data,
-                    "domLayout": "normal",
+                    "domLayout": dom_layout,
                     "defaultColDef": {"sortable": True, "resizable": True},
                     "suppressColumnVirtualisation": False,
                     "rowBuffer": 20,
                 },
-            ).classes("w-full").style("height: 100%")
+            ).classes("w-full").style(grid_style)

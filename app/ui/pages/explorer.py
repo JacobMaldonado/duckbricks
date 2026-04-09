@@ -44,7 +44,7 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
             history_tab = ui.tab("History", icon="history")
             properties_tab = ui.tab("Properties", icon="settings")
 
-        with ui.tab_panels(tabs, value=overview_tab).classes("w-full"):
+        with ui.tab_panels(tabs, value="Overview").classes("w-full"):
             with ui.tab_panel(overview_tab):
                 comment = manager.get_table_comment(catalog, schema, table)
                 if comment:
@@ -88,10 +88,11 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
 
                     def filter_columns(e) -> None:
                         q = (e.value or "").lower()
+                        first_key = col_names[0] if col_names else None
                         filtered = [
                             r
                             for r in all_rows
-                            if not q or any(q in str(v).lower() for v in r.values())
+                            if not q or (first_key and q in str(r.get(first_key, "")).lower())
                         ]
                         col_table.rows = filtered
                         col_table.update()
@@ -145,14 +146,13 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
         preview_loaded = {"done": False}
 
         def on_tab_change(e) -> None:
-            tab_value = (
-                e.value if not isinstance(e.value, list) else (e.value[0] if e.value else None)
-            )
-            if tab_value == "Preview" and not preview_loaded["done"]:
+            value = e.value
+            tab_name = getattr(value, "name", None) or str(value)
+            if tab_name == "Preview" and not preview_loaded["done"]:
                 preview_loaded["done"] = True
                 preview_container.clear()
                 preview_result = query_engine.execute_typed(f"SELECT * FROM {table_path} LIMIT 100")
-                results_grid.render(preview_container, preview_result)
+                results_grid.render(preview_container, preview_result, auto_height=True)
 
         tabs.on_value_change(on_tab_change)
 

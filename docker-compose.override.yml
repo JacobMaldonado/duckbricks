@@ -1,0 +1,6 @@
+# Development overrides — auto-merged by Docker Compose on `docker-compose up`.
+# Mounts local source into the container so NiceGUI's reload detects file changes.
+services:
+  duckbricks:
+    volumes:
+      - ./app:/app/app

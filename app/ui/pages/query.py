@@ -135,7 +135,6 @@ def query_workspace():
                 )
                 with ui.scroll_area().classes("w-full").style("flex: 1"):
                     tree_container = ui.column().classes("w-full")
-                    render_hierarchy_tree(tree_container)
 
         with h_splitter.after:
             with ui.splitter(
@@ -197,3 +196,27 @@ def query_workspace():
                         execute_btn.enable()
 
                 execute_btn.on_click(run_query)
+
+                def insert_into_editor(path: str) -> None:
+                    current = editor.value or ""
+                    editor.set_value(current.rstrip() + " " + path + " ")
+
+                ui.run_javascript("""
+                    const editorEl = document.querySelector('.cm-editor');
+                    if (editorEl) {
+                        editorEl.addEventListener('dragover', e => e.preventDefault());
+                        editorEl.addEventListener('drop', e => {
+                            e.preventDefault();
+                            const path = e.dataTransfer.getData('text/plain');
+                            if (path && !path.startsWith('__')) {
+                                emitEvent('editor-drop', path);
+                            }
+                        });
+                    }
+                """)
+                ui.on("editor-drop", lambda e: insert_into_editor(e.args))
+
+        render_hierarchy_tree(
+            tree_container,
+            on_insert_to_editor=insert_into_editor,
+        )

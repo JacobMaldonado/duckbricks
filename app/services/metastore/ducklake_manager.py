@@ -317,3 +317,26 @@ class MetastoreManager:
                 [catalog, schema],
             ).fetchall()
             return [{"name": row[0], "table_type": row[1]} for row in result]
+
+    def search_tables(self, query: str) -> list[dict]:
+        """Search tables and views by name across all catalogs."""
+        with self._lock:
+            try:
+                rows = self._conn.execute(
+                    "SELECT table_catalog, table_schema, table_name, table_type "
+                    "FROM information_schema.tables "
+                    "WHERE LOWER(table_name) LIKE LOWER(?)",
+                    [f"%{query}%"],
+                ).fetchall()
+                return [
+                    {
+                        "catalog": row[0],
+                        "schema": row[1],
+                        "name": row[2],
+                        "table_type": row[3],
+                        "full_path": f"{row[0]}.{row[1]}.{row[2]}",
+                    }
+                    for row in rows
+                ]
+            except Exception:
+                return []

@@ -33,18 +33,26 @@ class CatalogBrowser:
         self._metastore = metastore or _default_manager()
         self._loaded: set[str] = set()
         self._tree: ui.tree | None = None
+        self._tree_container: ui.column | None = None
+        self._search_results_container: ui.column | None = None
         self._search_value: str = ""
         self._render()
 
     def _render(self) -> None:
         with self._container:
-            ui.input(placeholder="Search tables...").classes("w-full q-px-sm q-pt-sm").props(
-                "dense clearable"
-            ).on("update:model-value", self._on_search_change)
-            tree_container = ui.column().classes("w-full")
+            search_input = (
+                ui.input(placeholder="Search tables...")
+                .classes("w-full q-px-sm q-pt-sm")
+                .props("dense clearable")
+            )
+            self._tree_container = ui.column().classes("w-full")
+            self._search_results_container = ui.column().classes("w-full")
+            self._search_results_container.set_visibility(False)
+
+        search_input.on_value_change(self._on_search_change)
 
         initial_nodes = self._load_catalog_nodes()
-        with tree_container:
+        with self._tree_container:
             self._tree = ui.tree(
                 initial_nodes,
                 node_key="id",
@@ -170,21 +178,42 @@ class CatalogBrowser:
         ui.notify(f"Copied: {node_id}", type="positive", timeout=1500)
 
     def _on_search_change(self, e) -> None:
-        self._search_value = (e.args or "").lower()
+        self._search_value = (e.value or "").strip()
         self._apply_search_filter()
 
     def _apply_search_filter(self) -> None:
-        if not self._tree:
-            return
-        query = self._search_value.strip()
+        query = self._search_value
         if not query:
-            self._tree.props(remove="filter")
-        else:
-            filter_method = (
-                "(node, filter) => node.label.toLowerCase().includes(filter.toLowerCase())"
-            )
-            self._tree.props(f'filter="{query}" filter-method="{filter_method}"')
-        self._tree.update()
+            self._tree_container.set_visibility(True)
+            self._search_results_container.set_visibility(False)
+            return
+
+        self._tree_container.set_visibility(False)
+        self._search_results_container.set_visibility(True)
+        self._render_search_results(query)
+
+    def _render_search_results(self, query: str) -> None:
+        self._search_results_container.clear()
+        matches = self._metastore.search_tables(query)
+        with self._search_results_container:
+            if not matches:
+                ui.label("No tables found.").classes("text-caption text-grey q-pa-sm")
+                return
+            for match in matches:
+                icon = "table_chart" if match["table_type"] == "BASE TABLE" else "view_list"
+                full_path = match["full_path"]
+                with ui.row().classes("items-center w-full q-px-sm q-py-xs"):
+                    ui.icon(icon).classes("text-grey-7").style("font-size: 18px")
+                    ui.label(match["name"]).classes("text-body2 text-grey-9 col q-ml-xs ellipsis")
+                    if self._on_insert_to_editor:
+                        ui.button(
+                            icon="keyboard_double_arrow_right",
+                            on_click=lambda _, p=full_path: self._on_insert_to_editor(p),  # type: ignore[misc]
+                        ).props("flat dense round").classes("text-grey-5").style("font-size: 10px")
+                    ui.button(
+                        icon="more_vert",
+                        on_click=lambda _, p=full_path: self._handle_menu(p),
+                    ).props("flat dense round").classes("text-grey-5").style("font-size: 10px")
 
 
 def _default_manager() -> MetastoreManager:

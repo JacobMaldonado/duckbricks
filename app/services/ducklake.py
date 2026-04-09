@@ -32,7 +32,7 @@ class DuckLakeManager:
             self._conn.execute("INSTALL ducklake; LOAD ducklake;")
             self._conn.execute(
                 f"ATTACH 'ducklake:{CATALOG_PATH}' AS {DUCKLAKE_NAME} "
-                f"(DATA_PATH '{DATA_PATH}')"
+                f"(DATA_PATH '{DATA_PATH}', AUTOMATIC_MIGRATION TRUE)"
             )
             self._conn.execute(f"USE {DUCKLAKE_NAME}")
             self._initialized = True

@@ -25,7 +25,7 @@ def initialized_manager():
     mgr._conn.execute("INSTALL ducklake; LOAD ducklake;")
     mgr._conn.execute(
         f"ATTACH 'ducklake:{catalog_path}' AS testcat "
-        f"(DATA_PATH '{data_path}')"
+        f"(DATA_PATH '{data_path}', AUTOMATIC_MIGRATION TRUE)"
     )
     mgr._conn.execute("USE testcat")
     mgr._initialized = True

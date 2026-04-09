@@ -40,5 +40,5 @@ def query():
     query_workspace()
 
 
-if __name__ == "__main__":
+if __name__ in {"__main__", "__mp_main__"}:
     ui.run(title="DuckBricks", host=HOST, port=int(PORT), reload=RELOAD)

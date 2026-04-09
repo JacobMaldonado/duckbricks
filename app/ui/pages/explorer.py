@@ -86,8 +86,8 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
                         row_key=col_names[0] if col_names else "id",
                     ).classes("w-full")
 
-                    def filter_columns(e):
-                        q = (e.args or "").lower()
+                    def filter_columns(e) -> None:
+                        q = (e.value or "").lower()
                         filtered = [
                             r
                             for r in all_rows
@@ -96,7 +96,7 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
                         col_table.rows = filtered
                         col_table.update()
 
-                    column_search.on("update:model-value", filter_columns)
+                    column_search.on_value_change(filter_columns)
 
             with ui.tab_panel(preview_tab):
                 with ui.row().classes("w-full items-center q-mb-sm gap-2"):
@@ -106,10 +106,11 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
                         icon="open_in_new",
                         on_click=lambda: ui.navigate.to(f"/query?table={table_path}"),
                     ).props("dense outline color=primary")
-
-                preview_result = query_engine.execute_typed(f"SELECT * FROM {table_path} LIMIT 100")
                 preview_container = ui.column().classes("w-full")
-                results_grid.render(preview_container, preview_result)
+                with preview_container:
+                    ui.label("Select the Preview tab to load data.").classes(
+                        "text-caption text-grey q-pa-md"
+                    )
 
             with ui.tab_panel(history_tab):
                 history = manager.get_table_history(catalog, schema, table)
@@ -140,6 +141,20 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
                             with ui.item_section():
                                 ui.item_label(key.replace("_", " ").title()).props("overline")
                                 ui.item_label(str(value) if value is not None else "N/A")
+
+        preview_loaded = {"done": False}
+
+        def on_tab_change(e) -> None:
+            tab_value = (
+                e.value if not isinstance(e.value, list) else (e.value[0] if e.value else None)
+            )
+            if tab_value == "Preview" and not preview_loaded["done"]:
+                preview_loaded["done"] = True
+                preview_container.clear()
+                preview_result = query_engine.execute_typed(f"SELECT * FROM {table_path} LIMIT 100")
+                results_grid.render(preview_container, preview_result)
+
+        tabs.on_value_change(on_tab_change)
 
 
 def explorer_page() -> None:

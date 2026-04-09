@@ -3,11 +3,13 @@
 from nicegui import ui
 
 from app.services.metastore import manager
-from app.ui.components.catalog_browser import render_hierarchy_tree
+from app.services.query import QueryEngine
+from app.ui.components.catalog_browser import CatalogBrowser
 from app.ui.components.layout import layout_frame
+from app.ui.components.results_grid import ResultsGrid
 
 
-def _render_init_prompt():
+def _render_init_prompt() -> None:
     ui.label("Metastore is not initialized.").classes("text-subtitle1 text-warning")
     init_button = ui.button("Initialize Metastore", icon="play_arrow")
     status_label = ui.label("").classes("text-caption")
@@ -23,64 +25,124 @@ def _render_init_prompt():
     init_button.on_click(do_init)
 
 
-def _render_schema(schema_container: ui.column, table_name: str):
-    """Render schema detail for a selected table."""
-    schema_container.clear()
+def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
+    """Render the tabbed detail panel for the selected table/view."""
+    detail_container.clear()
+    parts = table_path.split(".")
+    if len(parts) != 3:
+        return
+    catalog, schema, table = parts
+    query_engine = QueryEngine(manager)
+    results_grid = ResultsGrid()
 
-    try:
-        result = manager.execute_query_typed(f"DESCRIBE {table_name}")
+    with detail_container:
+        ui.label(table_path).classes("text-h6 q-pa-md q-pb-xs text-primary")
 
-        if not result.get("success"):
-            with schema_container:
-                ui.label(f"Error loading schema for '{table_name}'").classes(
-                    "text-negative q-pa-md"
+        with ui.tabs().classes("w-full") as tabs:
+            overview_tab = ui.tab("Overview", icon="info")
+            preview_tab = ui.tab("Preview", icon="preview")
+            history_tab = ui.tab("History", icon="history")
+            properties_tab = ui.tab("Properties", icon="settings")
+
+        with ui.tab_panels(tabs, value=overview_tab).classes("w-full"):
+            with ui.tab_panel(overview_tab):
+                comment = manager.get_table_comment(catalog, schema, table)
+                if comment:
+                    ui.label("Description").classes("text-subtitle2 q-mb-xs")
+                    ui.label(comment).classes("text-body2 text-grey-8 q-mb-md")
+
+                view_sql = manager.get_view_definition(catalog, schema, table)
+                if view_sql:
+                    ui.label("View Definition").classes("text-subtitle2 q-mb-xs")
+                    ui.code(view_sql, language="sql").classes("w-full q-mb-md")
+
+                ui.label("Columns").classes("text-subtitle2 q-mb-xs")
+                column_search = (
+                    ui.input(placeholder="Search columns...")
+                    .props("dense clearable")
+                    .classes("w-full q-mb-sm")
                 )
-                ui.label(result.get("error", "Unknown error")).classes("text-caption text-grey")
-            return
 
-        columns = result.get("columns", [])
-        rows = result.get("rows", [])
+                describe_result = query_engine.execute_typed(f"DESCRIBE {table_path}")
+                if describe_result.get("success") and describe_result.get("rows"):
+                    columns_data = describe_result["columns"]
+                    rows_data = describe_result["rows"]
+                    col_names = [c["name"] for c in columns_data]
+                    all_rows = [dict(zip(col_names, r)) for r in rows_data]
 
-        with schema_container:
-            ui.label(f"Table: {table_name}").classes("text-h5 q-mb-sm q-pa-md")
+                    table_columns = [
+                        {
+                            "name": c["name"],
+                            "label": f"{c['name']} ({c['type']})",
+                            "field": c["name"],
+                            "align": "left",
+                        }
+                        for c in columns_data
+                    ]
 
-            if not rows:
-                ui.label("No column information available.").classes(
-                    "text-caption text-grey q-pa-md"
-                )
-                return
+                    col_table = ui.table(
+                        columns=table_columns,
+                        rows=all_rows,
+                        row_key=col_names[0] if col_names else "id",
+                    ).classes("w-full")
 
-            ui.label(f"{len(rows)} column(s)").classes("text-caption text-grey q-mb-md q-px-md")
+                    def filter_columns(e):
+                        q = (e.args or "").lower()
+                        filtered = [
+                            r
+                            for r in all_rows
+                            if not q or any(q in str(v).lower() for v in r.values())
+                        ]
+                        col_table.rows = filtered
+                        col_table.update()
 
-            table_columns = [
-                {
-                    "name": col["name"],
-                    "label": f"{col['name']} ({col['type']})",
-                    "field": col["name"],
-                    "align": "left",
-                }
-                for col in columns
-            ]
+                    column_search.on("update:model-value", filter_columns)
 
-            col_names = [col["name"] for col in columns]
-            table_rows = [
-                {name: str(val) if val is not None else "" for name, val in zip(col_names, row)}
-                for row in rows
-            ]
+            with ui.tab_panel(preview_tab):
+                with ui.row().classes("w-full items-center q-mb-sm gap-2"):
+                    ui.label("Preview (LIMIT 100)").classes("text-subtitle2 col")
+                    ui.button(
+                        "Query Table",
+                        icon="open_in_new",
+                        on_click=lambda: ui.navigate.to(f"/query?table={table_path}"),
+                    ).props("dense outline color=primary")
 
-            ui.table(
-                columns=table_columns,
-                rows=table_rows,
-                row_key=col_names[0] if col_names else "id",
-            ).classes("w-full q-px-md")
+                preview_result = query_engine.execute_typed(f"SELECT * FROM {table_path} LIMIT 100")
+                preview_container = ui.column().classes("w-full")
+                results_grid.render(preview_container, preview_result)
 
-    except Exception as e:
-        with schema_container:
-            ui.label(f"Error loading schema for '{table_name}'").classes("text-negative q-pa-md")
-            ui.label(str(e)).classes("text-caption text-grey")
+            with ui.tab_panel(history_tab):
+                history = manager.get_table_history(catalog, schema, table)
+                if not history:
+                    ui.label("No version history available.").classes(
+                        "text-caption text-grey q-pa-md"
+                    )
+                else:
+                    col_names = list(history[0].keys())
+                    history_columns = [
+                        {
+                            "name": c,
+                            "label": c.replace("_", " ").title(),
+                            "field": c,
+                            "align": "left",
+                        }
+                        for c in col_names
+                    ]
+                    ui.table(columns=history_columns, rows=history, row_key=col_names[0]).classes(
+                        "w-full"
+                    )
+
+            with ui.tab_panel(properties_tab):
+                props = manager.get_table_properties(catalog, schema, table)
+                with ui.list().props("bordered separator").classes("w-full"):
+                    for key, value in props.items():
+                        with ui.item():
+                            with ui.item_section():
+                                ui.item_label(key.replace("_", " ").title()).props("overline")
+                                ui.item_label(str(value) if value is not None else "N/A")
 
 
-def explorer_page():
+def explorer_page() -> None:
     """Render the Metastore Explorer page."""
     layout_frame()
 
@@ -95,7 +157,7 @@ def explorer_page():
         return
 
     with (
-        ui.splitter(value=30, limits=(15, 50))
+        ui.splitter(value=25, limits=(15, 50))
         .classes("w-full")
         .style("height: calc(100vh - 64px)") as splitter
     ):
@@ -109,13 +171,14 @@ def explorer_page():
 
         with splitter.after:
             with ui.scroll_area().classes("w-full h-full"):
-                schema_container = ui.column().classes("w-full")
-                with schema_container:
-                    ui.label("Select a table to view its schema").classes(
+                detail_container = ui.column().classes("w-full")
+                with detail_container:
+                    ui.label("Select a table to view details").classes(
                         "text-subtitle2 text-grey q-pa-md"
                     )
 
-        def handle_table_selection(table_name: str):
-            _render_schema(schema_container, table_name)
-
-        render_hierarchy_tree(tree_container, on_table_select=handle_table_selection)
+        CatalogBrowser(
+            container=tree_container,
+            on_table_select=lambda path: _render_detail_panel(detail_container, path),
+            metastore=manager,
+        )

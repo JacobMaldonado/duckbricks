@@ -1,5 +1,7 @@
 """Query Workspace page — IDE-like SQL editor with catalog browser."""
 
+import urllib.parse
+
 from nicegui import ui
 
 from app.services.metastore import manager
@@ -104,6 +106,17 @@ def query_workspace():
         "padding: 0 !important; height: calc(100vh - 64px) !important;"
     )
 
+    params = ui.context.client.page.query_string
+    if params:
+        parsed = urllib.parse.parse_qs(params)
+        table_param = parsed.get("table", [None])[0]
+        if table_param:
+            initial_sql = f"SELECT *\nFROM {table_param}\nLIMIT 100"
+        else:
+            initial_sql = "-- Write your SQL query here\n"
+    else:
+        initial_sql = "-- Write your SQL query here\n"
+
     if not manager.is_initialized:
         with ui.column().classes("q-pa-lg w-full items-center"):
             ui.label("Metastore is not initialized.").classes("text-h5 text-warning")
@@ -156,7 +169,7 @@ def query_workspace():
 
                         editor = (
                             ui.codemirror(
-                                value="-- Write your SQL query here\n",
+                                value=initial_sql,
                                 language="SQL",
                                 theme="githubLight",
                             )

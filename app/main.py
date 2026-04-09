@@ -1,12 +1,13 @@
 """DuckBricks — NiceGUI application entry point."""
+
 import os
 
 from nicegui import app, ui
 
 from app.config import CATALOG_PATH, HOST, PORT, RELOAD
-from app.pages.explorer import explorer_page
-from app.pages.query import query_workspace
-from app.services.ducklake import manager
+from app.services.metastore import manager
+from app.ui.pages.explorer import explorer_page
+from app.ui.pages.query import query_workspace
 
 
 def startup():

@@ -2,13 +2,11 @@ services:
   duckbricks:
     build: .
     ports:
-      - "8080:8000"
+      - "8082:8000"
     volumes:
       - duckbricks-data:/data
-    environment:
-      - DUCKBRICKS_CATALOG_PATH=/data/metastore.ducklake
-      - DUCKBRICKS_DATA_PATH=/data/parquet/
-      - DUCKBRICKS_DUCKLAKE_NAME=duckbricks
+    env_file:
+      - .env
     restart: unless-stopped
 
 volumes:

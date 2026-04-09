@@ -36,6 +36,9 @@ class CatalogBrowser:
         self._tree_container: ui.column | None = None
         self._search_results_container: ui.column | None = None
         self._search_value: str = ""
+        self._context_menu_dialog: ui.dialog | None = None
+        self._context_menu_label: ui.label | None = None
+        self._context_menu_path: str = ""
         self._render()
 
     def _render(self) -> None:
@@ -65,8 +68,11 @@ class CatalogBrowser:
             "default-header",
             r"""
             <div class="row items-center full-width no-wrap"
+                 style="cursor: pointer"
                  :draggable="props.node.draggable"
-                 @dragstart="$event.dataTransfer.setData('text/plain', props.node.id)">
+                 @dragstart="$event.dataTransfer.setData('text/plain', props.node.id)"
+                 @click="props.node.children !== undefined
+                   ? props.tree.setExpanded(props.key, !props.expanded) : null">
               <q-icon v-if="props.node.icon" :name="props.node.icon"
                       class="q-mr-xs text-grey-7" size="18px"/>
               <span class="col text-body2 text-grey-9 ellipsis">{{ props.node.label }}</span>
@@ -80,8 +86,15 @@ class CatalogBrowser:
             </div>
             """,
         )
-        self._tree.on("insert", lambda e: self._handle_insert(e.args))
-        self._tree.on("menu", lambda e: self._handle_menu(e.args))
+        self._tree.on(
+            "insert",
+            lambda e: self._handle_insert(e.args[0] if isinstance(e.args, list) else e.args),
+        )
+        self._tree.on(
+            "menu",
+            lambda e: self._handle_menu(e.args[0] if isinstance(e.args, list) else e.args),
+        )
+        self._context_menu_dialog = self._build_context_menu()
 
     def _load_catalog_nodes(self) -> list[dict]:
         if not self._metastore.is_initialized:
@@ -171,11 +184,33 @@ class CatalogBrowser:
             self._on_insert_to_editor(node_id)
 
     def _handle_menu(self, node_id: str) -> None:
-        ui.run_javascript(
-            f"navigator.clipboard.writeText('{node_id}')"
-            f".then(() => console.log('Copied: {node_id}'))"
-        )
-        ui.notify(f"Copied: {node_id}", type="positive", timeout=1500)
+        self._context_menu_path = node_id
+        if self._context_menu_label is not None:
+            self._context_menu_label.set_text(node_id)
+        if self._context_menu_dialog is not None:
+            self._context_menu_dialog.open()
+
+    def _build_context_menu(self) -> "ui.dialog":
+        with ui.dialog() as dialog, ui.card().classes("q-pa-sm").style("min-width: 180px"):
+            self._context_menu_label = (
+                ui.label("")
+                .classes("text-caption text-grey-7 q-mb-xs ellipsis")
+                .style("max-width: 200px")
+            )
+            ui.separator()
+            ui.button(
+                "Copy path",
+                icon="content_copy",
+                on_click=lambda: self._copy_path_and_close(),
+            ).props("flat align=left").classes("w-full text-body2")
+        return dialog
+
+    def _copy_path_and_close(self) -> None:
+        path = self._context_menu_path
+        ui.run_javascript(f"navigator.clipboard.writeText('{path}')")
+        ui.notify(f"Copied: {path}", type="positive", timeout=1500)
+        if self._context_menu_dialog is not None:
+            self._context_menu_dialog.close()
 
     def _on_search_change(self, e) -> None:
         self._search_value = (e.value or "").strip()
@@ -192,6 +227,10 @@ class CatalogBrowser:
         self._search_results_container.set_visibility(True)
         self._render_search_results(query)
 
+    def _select_table(self, path: str) -> None:
+        if self._on_table_select:
+            self._on_table_select(path)
+
     def _render_search_results(self, query: str) -> None:
         self._search_results_container.clear()
         matches = self._metastore.search_tables(query)
@@ -199,21 +238,47 @@ class CatalogBrowser:
             if not matches:
                 ui.label("No tables found.").classes("text-caption text-grey q-pa-sm")
                 return
+
+            groups: dict[str, list[dict]] = {}
             for match in matches:
-                icon = "table_chart" if match["table_type"] == "BASE TABLE" else "view_list"
-                full_path = match["full_path"]
-                with ui.row().classes("items-center w-full q-px-sm q-py-xs"):
-                    ui.icon(icon).classes("text-grey-7").style("font-size: 18px")
-                    ui.label(match["name"]).classes("text-body2 text-grey-9 col q-ml-xs ellipsis")
-                    if self._on_insert_to_editor:
-                        ui.button(
-                            icon="keyboard_double_arrow_right",
-                            on_click=lambda _, p=full_path: self._on_insert_to_editor(p),  # type: ignore[misc]
-                        ).props("flat dense round").classes("text-grey-5").style("font-size: 10px")
-                    ui.button(
-                        icon="more_vert",
-                        on_click=lambda _, p=full_path: self._handle_menu(p),
-                    ).props("flat dense round").classes("text-grey-5").style("font-size: 10px")
+                group_key = f"{match['catalog']}.{match['schema']}"
+                groups.setdefault(group_key, []).append(match)
+
+            for group_key, items in groups.items():
+                with (
+                    ui.expansion(group_key, icon="folder")
+                    .classes("w-full")
+                    .props("dense default-opened")
+                ):
+                    for match in items:
+                        icon = "table_chart" if match["table_type"] == "BASE TABLE" else "view_list"
+                        full_path = match["full_path"]
+                        with (
+                            ui.row()
+                            .classes(
+                                "items-center w-full q-px-sm q-py-xs"
+                                " cursor-pointer hover:bg-grey-2 rounded"
+                            )
+                            .on(
+                                "click",
+                                lambda _, p=full_path: self._select_table(p),
+                            )
+                        ):
+                            ui.icon(icon).classes("text-grey-7 q-mr-xs").style("font-size: 18px")
+                            ui.label(match["name"]).classes("text-body2 text-grey-9 col ellipsis")
+                            if self._on_insert_to_editor:
+                                ui.button(
+                                    icon="keyboard_double_arrow_right",
+                                    on_click=lambda _, p=full_path: self._on_insert_to_editor(p),  # type: ignore[misc]
+                                ).props("flat dense round").classes("text-grey-5").style(
+                                    "font-size: 10px"
+                                )
+                            ui.button(
+                                icon="more_vert",
+                                on_click=lambda _, p=full_path: self._handle_menu(p),
+                            ).props("flat dense round").classes("text-grey-5").style(
+                                "font-size: 10px"
+                            )
 
 
 def _default_manager() -> MetastoreManager:

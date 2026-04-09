@@ -1,4 +1,5 @@
 """Tests for the Metastore Explorer."""
+
 import pytest
 
 from app.services.ducklake import DuckLakeManager

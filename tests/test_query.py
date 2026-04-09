@@ -1,4 +1,5 @@
 """Tests for the Execution Environment (legacy compatibility)."""
+
 import pytest
 
 from app.services.ducklake import DuckLakeManager

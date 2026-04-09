@@ -35,7 +35,7 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
     query_engine = QueryEngine(manager)
     results_grid = ResultsGrid()
 
-    with detail_container:
+    with detail_container.classes("w-full h-[80vh]"):
         ui.label(table_path).classes("text-h6 q-pa-md q-pb-xs text-primary")
 
         with ui.tabs().classes("w-full") as tabs:
@@ -44,7 +44,7 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
             history_tab = ui.tab("History", icon="history")
             properties_tab = ui.tab("Properties", icon="settings")
 
-        with ui.tab_panels(tabs, value="Overview").classes("w-full"):
+        with ui.tab_panels(tabs, value="Overview").classes("w-full h-full"):
             with ui.tab_panel(overview_tab):
                 comment = manager.get_table_comment(catalog, schema, table)
                 if comment:

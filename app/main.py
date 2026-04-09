@@ -41,4 +41,5 @@ def query():
 
 
 if __name__ in {"__main__", "__mp_main__"}:
+    print(f"Starting DuckBricks with reload={RELOAD}...")
     ui.run(title="DuckBricks", host=HOST, port=int(PORT), reload=RELOAD)

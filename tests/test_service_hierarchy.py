@@ -32,15 +32,10 @@ def initialized_manager():
 
     # Create test schema and tables
     mgr._conn.execute("CREATE SCHEMA testcat.analytics")
+    mgr._conn.execute("CREATE TABLE testcat.main.users (id INTEGER, name VARCHAR)")
+    mgr._conn.execute("INSERT INTO testcat.main.users VALUES (1, 'Alice'), (2, 'Bob')")
     mgr._conn.execute(
-        "CREATE TABLE testcat.main.users (id INTEGER, name VARCHAR)"
-    )
-    mgr._conn.execute(
-        "INSERT INTO testcat.main.users VALUES (1, 'Alice'), (2, 'Bob')"
-    )
-    mgr._conn.execute(
-        "CREATE TABLE testcat.analytics.events "
-        "(ts TIMESTAMP, event_type VARCHAR, value DOUBLE)"
+        "CREATE TABLE testcat.analytics.events (ts TIMESTAMP, event_type VARCHAR, value DOUBLE)"
     )
 
     yield mgr
@@ -69,33 +64,23 @@ def test_list_schemas(initialized_manager):
 
 def test_list_tables_in_schema(initialized_manager):
     """Should return tables in a specific schema."""
-    tables_main = initialized_manager.list_tables_in_schema(
-        "testcat", "main"
-    )
+    tables_main = initialized_manager.list_tables_in_schema("testcat", "main")
     assert "users" in tables_main
 
-    tables_analytics = initialized_manager.list_tables_in_schema(
-        "testcat", "analytics"
-    )
+    tables_analytics = initialized_manager.list_tables_in_schema("testcat", "analytics")
     assert "events" in tables_analytics
 
 
 def test_list_tables_in_schema_empty(initialized_manager):
     """Should return empty list for schema with no tables."""
-    initialized_manager._conn.execute(
-        "CREATE SCHEMA testcat.empty_schema"
-    )
-    tables = initialized_manager.list_tables_in_schema(
-        "testcat", "empty_schema"
-    )
+    initialized_manager._conn.execute("CREATE SCHEMA testcat.empty_schema")
+    tables = initialized_manager.list_tables_in_schema("testcat", "empty_schema")
     assert tables == []
 
 
 def test_execute_query_typed_returns_types(initialized_manager):
     """execute_query_typed should return column type information."""
-    result = initialized_manager.execute_query_typed(
-        "SELECT * FROM testcat.main.users"
-    )
+    result = initialized_manager.execute_query_typed("SELECT * FROM testcat.main.users")
     assert result["success"] is True
     assert len(result["columns"]) == 2
     assert result["columns"][0]["name"] == "id"
@@ -107,18 +92,14 @@ def test_execute_query_typed_returns_types(initialized_manager):
 
 def test_execute_query_typed_error(initialized_manager):
     """execute_query_typed should return error on bad SQL."""
-    result = initialized_manager.execute_query_typed(
-        "SELECT * FROM nonexistent_table"
-    )
+    result = initialized_manager.execute_query_typed("SELECT * FROM nonexistent_table")
     assert result["success"] is False
     assert result["error"] is not None
 
 
 def test_execute_query_typed_ddl(initialized_manager):
     """execute_query_typed should handle DDL (no result set)."""
-    result = initialized_manager.execute_query_typed(
-        "CREATE TABLE testcat.main.tmp_test (x INT)"
-    )
+    result = initialized_manager.execute_query_typed("CREATE TABLE testcat.main.tmp_test (x INT)")
     assert result["success"] is True
 
 

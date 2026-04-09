@@ -3,7 +3,7 @@ import os
 
 from nicegui import app, ui
 
-from app.config import CATALOG_PATH, HOST, PORT
+from app.config import CATALOG_PATH, HOST, PORT, RELOAD
 from app.pages.explorer import explorer_page
 from app.pages.query import query_workspace
 from app.services.ducklake import manager
@@ -40,4 +40,4 @@ def query():
 
 
 if __name__ == "__main__":
-    ui.run(title="DuckBricks", host=HOST, port=int(PORT), reload=False)
+    ui.run(title="DuckBricks", host=HOST, port=int(PORT), reload=RELOAD)

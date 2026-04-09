@@ -1,9 +1,10 @@
 """Unit tests for hierarchy tree component."""
 
-import pytest
-from unittest.mock import Mock, patch, call
+from unittest.mock import Mock, patch
 
-from app.components.hierarchy_tree import render_hierarchy_tree, _find_node
+import pytest
+
+from app.components.hierarchy_tree import _find_node, render_hierarchy_tree
 from app.services.ducklake import DuckLakeManager
 
 
@@ -34,7 +35,7 @@ def test_load_catalogs_success(mock_service, mock_container):
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
 
-        tree = render_hierarchy_tree(mock_container, ducklake_manager=mock_service)
+        render_hierarchy_tree(mock_container, ducklake_manager=mock_service)
 
         mock_service.list_catalogs.assert_called_once()
 
@@ -64,7 +65,7 @@ def test_load_catalogs_not_initialized(mock_container):
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
 
-        tree = render_hierarchy_tree(mock_container, ducklake_manager=service)
+        render_hierarchy_tree(mock_container, ducklake_manager=service)
 
         call_args = mock_ui.tree.call_args
         nodes = call_args[0][0]
@@ -85,7 +86,7 @@ def test_load_catalogs_empty(mock_container):
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
 
-        tree = render_hierarchy_tree(mock_container, ducklake_manager=service)
+        render_hierarchy_tree(mock_container, ducklake_manager=service)
 
         call_args = mock_ui.tree.call_args
         nodes = call_args[0][0]
@@ -106,7 +107,7 @@ def test_load_catalogs_error(mock_container):
         mock_ui.tree.return_value = mock_tree
         mock_ui.notify = Mock()
 
-        tree = render_hierarchy_tree(mock_container, ducklake_manager=service)
+        render_hierarchy_tree(mock_container, ducklake_manager=service)
 
         mock_ui.notify.assert_called()
 
@@ -119,6 +120,7 @@ def test_load_catalogs_error(mock_container):
 
 
 # ── _find_node tests ──────────────────────────────────────────────
+
 
 def test_find_node_root_level():
     """Test finding a node at root level."""
@@ -142,9 +144,7 @@ def test_find_node_nested():
                 {
                     "id": "cat1.schema2",
                     "label": "Schema 2",
-                    "children": [
-                        {"id": "cat1.schema2.table1", "label": "Table 1"}
-                    ],
+                    "children": [{"id": "cat1.schema2.table1", "label": "Table 1"}],
                 },
             ],
         }
@@ -168,6 +168,7 @@ def test_find_node_empty_list():
 
 
 # ── node structure tests ──────────────────────────────────────────
+
 
 def test_node_id_convention(mock_container):
     """Test node IDs follow dot-separated convention."""
@@ -199,8 +200,8 @@ def test_callback_is_optional(mock_service, mock_container):
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
 
-        tree = render_hierarchy_tree(mock_container, ducklake_manager=mock_service)
-        assert tree is not None
+        result = render_hierarchy_tree(mock_container, ducklake_manager=mock_service)
+        assert result is not None
 
 
 def test_placeholder_children_make_nodes_expandable(mock_container):
@@ -232,7 +233,7 @@ def test_tree_created_with_event_handlers(mock_container, mock_service):
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
 
-        tree = render_hierarchy_tree(mock_container, ducklake_manager=mock_service)
+        render_hierarchy_tree(mock_container, ducklake_manager=mock_service)
 
         # tree should be created with on_select and on_expand kwargs
         call_kwargs = mock_ui.tree.call_args[1]

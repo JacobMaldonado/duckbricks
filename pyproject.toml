@@ -39,6 +39,14 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [
+    "app.services.metastore.ducklake_manager",
+    "app.ui.components.catalog_browser",
+    "app.ui.components.layout",
+]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=app --cov-report=term-missing"

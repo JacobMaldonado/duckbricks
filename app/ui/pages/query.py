@@ -1,5 +1,7 @@
 """Query Workspace page — IDE-like SQL editor with catalog browser."""
 
+import time
+
 from nicegui import ui
 
 from app.services.metastore import manager
@@ -103,6 +105,14 @@ def query_workspace():
     ui.query(".nicegui-content").classes("p-0").style(
         "padding: 0 !important; height: calc(100vh - 64px) !important;"
     )
+    ui.add_head_html("""
+    <style>
+    .cm-editor .cm-tooltip-autocomplete {
+        z-index: 9999 !important;
+    }
+    .cm-editor { overflow: visible !important; }
+    </style>
+    """)
 
     table_param = ui.context.client.request.query_params.get("table")
     initial_sql = (
@@ -158,7 +168,7 @@ def query_workspace():
                         ):
                             execute_btn = ui.button("Execute", icon="play_arrow").props(
                                 "color=primary dense"
-                            )
+                            ).tooltip("Shift+Enter")
                             status_label = ui.label("").classes("text-caption text-grey")
 
                         editor = (
@@ -168,8 +178,34 @@ def query_workspace():
                                 theme="githubLight",
                             )
                             .classes("w-full")
-                            .style("flex: 1; overflow: auto")
+                            .style("flex: 1; overflow: visible")
                         )
+
+                        _editor_id = editor.id
+                        _cache_bust = int(time.time())
+                        ui.run_javascript(
+                            f"import('/static/sql_completion.js?v={_cache_bust}')"
+                            f".then(m => m.mount({_editor_id}))"
+                            f".catch(e => console.error('[sql_completion]', e))"
+                        )
+                        ui.run_javascript(f"""
+                            (async () => {{
+                                let comp;
+                                for (let i = 0; i < 50; i++) {{
+                                    comp = getElement({_editor_id});
+                                    if (comp?.editor) break;
+                                    await new Promise(r => setTimeout(r, 100));
+                                }}
+                                if (!comp?.editor) return;
+                                comp.editor.dom.addEventListener('keydown', (e) => {{
+                                    if (e.key === 'Enter' && e.shiftKey) {{
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        emitEvent('execute-query');
+                                    }}
+                                }});
+                            }})();
+                        """)
 
                 with v_splitter.after:
                     results_container = ui.column().classes("w-full h-full p-0 gap-0")
@@ -179,7 +215,16 @@ def query_workspace():
                         )
 
                 async def run_query():
-                    sql = editor.value
+                    selected = await ui.run_javascript(f"""
+                        (() => {{
+                            const comp = getElement({_editor_id});
+                            if (!comp || !comp.editor) return '';
+                            const state = comp.editor.state;
+                            const sel = state.selection.main;
+                            return sel.empty ? '' : state.sliceDoc(sel.from, sel.to);
+                        }})();
+                    """)
+                    sql = selected.strip() if selected and selected.strip() else editor.value
                     if not sql or not sql.strip():
                         ui.notify("Please enter a SQL query.", type="warning")
                         return
@@ -203,10 +248,19 @@ def query_workspace():
                         execute_btn.enable()
 
                 execute_btn.on_click(run_query)
+                ui.on("execute-query", lambda _: run_query())
 
                 def insert_into_editor(path: str) -> None:
-                    current = editor.value or ""
-                    editor.set_value(current.rstrip() + " " + path + " ")
+                    editor_id = editor.id
+                    ui.run_javascript(f"""
+                        (function() {{
+                            const comp = getElement({editor_id});
+                            if (!comp || !comp.editor) return;
+                            const view = comp.editor;
+                            view.dispatch(view.state.replaceSelection(' {path} '));
+                            view.focus();
+                        }})();
+                    """)
 
                 ui.run_javascript("""
                     const editorEl = document.querySelector('.cm-editor');

@@ -62,30 +62,37 @@ class CatalogBrowser:
                 label_key="label",
                 on_select=self._handle_select,
                 on_expand=self._handle_expand,
-            ).classes("w-full")
+            ).classes("w-full").props("dense")
 
-        self._tree.add_slot(
-            "default-header",
+        tree_id = self._tree.id
+        slot_template = (
             r"""
             <div class="row items-center full-width no-wrap"
-                 style="cursor: pointer"
                  :draggable="props.node.draggable"
-                 @dragstart="$event.dataTransfer.setData('text/plain', props.node.id)"
-                 @click="props.node.children !== undefined
-                   ? props.tree.setExpanded(props.key, !props.expanded) : null">
-              <q-icon v-if="props.node.icon" :name="props.node.icon"
-                      class="q-mr-xs text-grey-7" size="18px"/>
-              <span class="col text-body2 text-grey-9 ellipsis">{{ props.node.label }}</span>
+                 @dragstart="$event.dataTransfer.setData('text/plain', props.node.id)">
+              <div class="row items-center col no-wrap"
+                   style="cursor: pointer; min-width: 0; overflow: hidden"
+                   @click="props.node.children !== undefined
+                     ? props.tree.setExpanded(props.key, !props.expanded) : null">
+                <q-icon v-if="props.node.icon" :name="props.node.icon"
+                        class="q-mr-xs text-grey-7 flex-shrink-0" size="14px"/>
+                <span class="col text-caption text-grey-9 ellipsis" style="min-width: 0">{{ props.node.label }}</span>
+              </div>
               <q-btn v-if="props.node.insertable" flat dense round
                      icon="keyboard_double_arrow_right"
                      size="10px" class="text-grey-5 q-ml-xs"
-                     @click.stop="$emit('insert', props.node.id)"/>
+                     @click="$root.$refs['r"""
+            + str(tree_id)
+            + r"""'].$emit('insert', props.node.id)"/>
               <q-btn flat dense round icon="more_vert" size="10px"
                      class="text-grey-5"
-                     @click.stop="$emit('menu', props.node.id)"/>
+                     @click="$root.$refs['r"""
+            + str(tree_id)
+            + r"""'].$emit('menu', props.node.id)"/>
             </div>
-            """,
+            """
         )
+        self._tree.add_slot("default-header", slot_template)
         self._tree.on(
             "insert",
             lambda e: self._handle_insert(e.args[0] if isinstance(e.args, list) else e.args),
@@ -180,6 +187,7 @@ class CatalogBrowser:
             self._on_table_select(key)
 
     def _handle_insert(self, node_id: str) -> None:
+        print(node_id)
         if self._on_insert_to_editor:
             self._on_insert_to_editor(node_id)
 
@@ -257,15 +265,16 @@ class CatalogBrowser:
                             ui.row()
                             .classes(
                                 "items-center w-full q-px-sm q-py-xs"
-                                " cursor-pointer hover:bg-grey-2 rounded"
+                                " cursor-pointer hover:bg-grey-2 rounded no-wrap"
                             )
+                            .style("min-width: 0; overflow: hidden")
                             .on(
                                 "click",
                                 lambda _, p=full_path: self._select_table(p),
                             )
                         ):
-                            ui.icon(icon).classes("text-grey-7 q-mr-xs").style("font-size: 18px")
-                            ui.label(match["name"]).classes("text-body2 text-grey-9 col ellipsis")
+                            ui.icon(icon).classes("text-grey-7 q-mr-xs flex-shrink-0").style("font-size: 14px")
+                            ui.label(match["name"]).classes("text-caption text-grey-9 col ellipsis").style("min-width: 0")
                             if self._on_insert_to_editor:
                                 ui.button(
                                     icon="keyboard_double_arrow_right",

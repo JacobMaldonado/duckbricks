@@ -32,13 +32,27 @@ class ResultsGrid:
                 "text-caption text-grey q-pa-xs"
             )
 
-            col_defs = [
+            row_number_col = {
+                "headerName": "#",
+                "valueGetter": "node.rowIndex + 1",
+                "width": 60,
+                "minWidth": 60,
+                "maxWidth": 60,
+                "pinned": "left",
+                "sortable": False,
+                "filter": False,
+                "resizable": False,
+                "suppressMovable": True,
+                "cellStyle": {"color": "#9e9e9e", "textAlign": "right"},
+            }
+            col_defs = [row_number_col] + [
                 {
                     "headerName": f"{col['name']} ({col['type']})",
                     "field": col["name"],
                     "sortable": True,
                     "resizable": True,
                     "filter": True,
+                    "minWidth": 120,
                 }
                 for col in columns
             ]
@@ -48,13 +62,16 @@ class ResultsGrid:
                 for row in rows
             ]
             dom_layout = "autoHeight" if auto_height else "normal"
-            grid_style = "width: 100%" if auto_height else "height: 100%"
+            many_columns = len(columns) > 5
+            grid_style = "width: 100%; overflow-x: auto;" if many_columns else "width: 100%;"
+            if not auto_height:
+                grid_style += " height: 100%;"
             ui.aggrid(
                 options={
                     "columnDefs": col_defs,
                     "rowData": row_data,
                     "domLayout": dom_layout,
-                    "defaultColDef": {"sortable": True, "resizable": True},
+                    "defaultColDef": {"sortable": True, "resizable": True, "minWidth": 120},
                     "suppressColumnVirtualisation": False,
                     "rowBuffer": 20,
                 },

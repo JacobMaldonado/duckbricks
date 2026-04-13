@@ -5,6 +5,7 @@ import os
 from nicegui import app, ui
 
 from app.config import CATALOG_PATH, HOST, PORT, RELOAD
+from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.metastore import manager
 from app.ui.pages.explorer import explorer_page
 from app.ui.pages.query import query_workspace
@@ -20,7 +21,13 @@ def startup():
 
 
 app.on_startup(startup)
+app.add_static_files("/static", "app/ui/static")
 
+
+@app.get("/api/completion/schema")
+async def completion_schema() -> dict:
+    """Return catalog/schema/table/column structure for SQL autocompletion."""
+    return CompletionSchemaProvider(manager).build()
 
 @ui.page("/")
 def index():

@@ -13,8 +13,9 @@ def layout_frame(title: str = "DuckBricks") -> None:
         ui.space()
         ui.label(f"v{VERSION}").classes("text-caption q-mr-md")
 
-    with ui.left_drawer(value=True, bordered=True).classes("bg-grey-1") as drawer:
-        with ui.column().classes("gap-1 q-pt-md q-px-sm"):
+    with ui.left_drawer(value=True, bordered=True).classes("bg-grey-1 p-0 pl-4 pt-4") as drawer:
+        drawer.props("width=200")
+        with ui.column().classes("gap-1 q-pt-md q-px-sm p-0"):
             with (
                 ui.row()
                 .classes("items-center gap-2 q-pl-xs cursor-pointer")

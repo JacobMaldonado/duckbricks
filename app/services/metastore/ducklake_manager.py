@@ -318,6 +318,22 @@ class MetastoreManager:
             ).fetchall()
             return [{"name": row[0], "table_type": row[1]} for row in result]
 
+    def list_columns(self, catalog: str, schema: str, table: str) -> list[dict]:
+        """Return column names and data types for a specific table."""
+        if not self._initialized:
+            return []
+        with self._lock:
+            try:
+                result = self._conn.execute(
+                    "SELECT column_name, data_type FROM information_schema.columns "
+                    "WHERE table_catalog = ? AND table_schema = ? AND table_name = ? "
+                    "ORDER BY ordinal_position",
+                    [catalog, schema, table],
+                ).fetchall()
+                return [{"name": row[0], "type": row[1]} for row in result]
+            except Exception:
+                return []
+
     def search_tables(self, query: str) -> list[dict]:
         """Search tables and views by name across all catalogs."""
         with self._lock:

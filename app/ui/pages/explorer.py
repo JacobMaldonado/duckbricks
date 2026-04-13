@@ -35,10 +35,10 @@ def _render_detail_panel(detail_container: ui.element, table_path: str) -> None:
     query_engine = QueryEngine(manager)
     results_grid = ResultsGrid()
 
-    with detail_container.classes("w-full h-[80vh]"):
+    with detail_container.classes("w-full h-[80vh] border-2 rounded-sm border-grey-3"):
         ui.label(table_path).classes("text-h6 q-pa-md q-pb-xs text-primary")
 
-        with ui.tabs().classes("w-full") as tabs:
+        with ui.tabs().classes("w-full").props("inline-label") as tabs:
             overview_tab = ui.tab("Overview", icon="info")
             preview_tab = ui.tab("Preview", icon="preview")
             history_tab = ui.tab("History", icon="history")

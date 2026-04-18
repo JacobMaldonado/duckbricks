@@ -21,3 +21,5 @@ PORT = int(os.getenv("DUCKBRICKS_PORT", "8000"))
 
 ENV = os.getenv("DUCKBRICKS_ENV", "production")
 RELOAD = ENV == "development"
+
+DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://duckbricks:duckbricks@localhost:5432/duckbricks")

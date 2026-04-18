@@ -185,27 +185,11 @@ def query_workspace():
                         _cache_bust = int(time.time())
                         ui.run_javascript(
                             f"import('/static/sql_completion.js?v={_cache_bust}')"
-                            f".then(m => m.mount({_editor_id}))"
+                            f".then(m => m.mount({_editor_id}, {{"
+                            f"  onExecute: () => emitEvent('execute-query')"
+                            f"}}))"
                             f".catch(e => console.error('[sql_completion]', e))"
                         )
-                        ui.run_javascript(f"""
-                            (async () => {{
-                                let comp;
-                                for (let i = 0; i < 50; i++) {{
-                                    comp = getElement({_editor_id});
-                                    if (comp?.editor) break;
-                                    await new Promise(r => setTimeout(r, 100));
-                                }}
-                                if (!comp?.editor) return;
-                                comp.editor.dom.addEventListener('keydown', (e) => {{
-                                    if (e.key === 'Enter' && e.shiftKey) {{
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        emitEvent('execute-query');
-                                    }}
-                                }});
-                            }})();
-                        """)
 
                 with v_splitter.after:
                     results_container = ui.column().classes("w-full h-full p-0 gap-0")

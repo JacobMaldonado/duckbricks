@@ -1,4 +1,4 @@
-const _SQL_COMPLETION_VERSION = "2.0.0";
+const _SQL_COMPLETION_VERSION = "3.0.0";
 
 /**
  * DuckBricks SQL Completion Engine
@@ -256,6 +256,19 @@ async function _fetchSchema() {
     return {};
 }
 
+function _getCM6Internals(comp) {
+    const view = comp.editor;
+    const EditorState = view.state.constructor;
+    const sampleEffect = comp.languageConfig.reconfigure([]);
+    const StateEffect = sampleEffect.constructor;
+    return {
+        view,
+        EditorState,
+        languageData: EditorState.languageData,
+        appendConfig: StateEffect.appendConfig,
+    };
+}
+
 function _attachCompletion(comp, schema) {
     const source = new SqlCompletionSource(schema);
     const view = comp.editor;
@@ -263,15 +276,7 @@ function _attachCompletion(comp, schema) {
     const wrappedSource = (ctx) => {
         const result = source.complete(ctx);
         if (result) {
-            console.log("[sql_completion] complete() →", result.options.length,
-                "options, from:", result.from, "pos:", ctx.pos,
-                "sample:", result.options.slice(0, 3).map(o => o.label));
-            // Check if tooltip appeared after a brief delay
-            setTimeout(() => {
-                const tooltip = view.dom.querySelector(".cm-tooltip-autocomplete");
-                console.log("[sql_completion] tooltip element:", tooltip ? "EXISTS" : "NOT FOUND",
-                    tooltip ? `(${tooltip.offsetWidth}x${tooltip.offsetHeight})` : "");
-            }, 100);
+            console.log("[sql_completion] complete() →", result.options.length, "options");
         }
         return result;
     };
@@ -282,6 +287,8 @@ function _attachCompletion(comp, schema) {
     const StateEffect = sampleEffect.constructor;
     const appendConfig = StateEffect.appendConfig;
 
+    console.log("[sql_completion] appendConfig:", appendConfig, "languageData:", languageData);
+
     if (!languageData || !appendConfig) {
         console.error("[sql_completion] Could not obtain CM6 classes from editor instance.");
         return;
@@ -289,17 +296,42 @@ function _attachCompletion(comp, schema) {
 
     view.dispatch({
         effects: appendConfig.of(
-            languageData.of(() => [{
-                autocomplete: wrappedSource,
-            }]),
+            languageData.of(() => [{ autocomplete: wrappedSource }]),
         ),
     });
 
     console.log("[sql_completion] Completion source attached. Tables:", Object.keys(schema).length);
 }
 
-export async function mount(editorId) {
-    console.log("[sql_completion] v" + _SQL_COMPLETION_VERSION + " mount(" + editorId + ")");
+function _attachKeybindings(comp, { onExecute } = {}) {
+    const view = comp.editor;
+
+    view.dom.addEventListener('keydown', (e) => {
+        if (e.shiftKey && e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            if (onExecute) onExecute();
+            return;
+        }
+
+        if (e.key === 'Tab') {
+            const tooltip = document.querySelector('.cm-tooltip-autocomplete');
+            if (!tooltip) return;
+            const selected = tooltip.querySelector('[aria-selected="true"]')
+                || tooltip.querySelector('li');
+            if (selected) {
+                e.preventDefault();
+                e.stopPropagation();
+                selected.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+            }
+        }
+    }, { capture: true });
+
+    console.log("[sql_completion] Keybindings attached.");
+}
+
+export async function mount(editorId, { onExecute } = {}) {
+    console.error("[sql_completion] v" + _SQL_COMPLETION_VERSION + " mount(" + editorId + ") - LOADED");
     const comp = await _waitForEditor(editorId);
     if (!comp) {
         console.warn("[sql_completion] Editor not found for id:", editorId);
@@ -307,6 +339,7 @@ export async function mount(editorId) {
     }
     const schema = await _fetchSchema();
     _attachCompletion(comp, schema);
+    _attachKeybindings(comp, { onExecute });
 }
 
 export async function refreshSchema(editorId) {

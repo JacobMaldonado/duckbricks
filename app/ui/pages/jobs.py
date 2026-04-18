@@ -256,22 +256,22 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
             ).props("flat dense color=negative")
 
         task_name = ui.input("Task name", value=task_def.get("name", "")).classes("w-full")
-        task_name.on("blur", lambda e, t=task_def: t.update({"name": e.value}))
+        task_name.on("blur", lambda _e, el=task_name, t=task_def: t.update({"name": el.value}))
 
-        executor_select = ui.select(
+        ui.select(
             ["sql", "python"],
             label="Executor type",
             value=task_def.get("executor_type", "sql"),
+            on_change=lambda e, t=task_def: t.update({"executor_type": e.value}),
         ).classes("w-full")
-        executor_select.on(
-            "update:modelValue", lambda e, t=task_def: t.update({"executor_type": e.value})
-        )
 
         content_area = ui.textarea(
             "Content (SQL query or Python script)",
             value=task_def.get("content", ""),
         ).classes("w-full font-mono")
-        content_area.on("blur", lambda e, t=task_def: t.update({"content": e.value}))
+        content_area.on(
+            "blur", lambda _e, el=content_area, t=task_def: t.update({"content": el.value})
+        )
 
 
 def _save_job(

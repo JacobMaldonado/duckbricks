@@ -6,8 +6,10 @@ from nicegui import app, ui
 
 from app.config import CATALOG_PATH, HOST, PORT, RELOAD
 from app.services.completion.schema_provider import CompletionSchemaProvider
+from app.services.database.session import init_database
 from app.services.metastore import manager
 from app.ui.pages.explorer import explorer_page
+from app.ui.pages.jobs import jobs_page
 from app.ui.pages.query import query_workspace
 
 
@@ -18,6 +20,10 @@ def startup():
             manager.initialize()
         except Exception as e:
             print(f"Warning: Could not auto-attach existing metastore: {e}")
+    try:
+        init_database()
+    except Exception as e:
+        print(f"Warning: Could not initialize database: {e}")
 
 
 app.on_startup(startup)
@@ -45,6 +51,12 @@ def explorer():
 def query():
     """SQL Query Workspace."""
     query_workspace()
+
+
+@ui.page("/jobs")
+def jobs():
+    """Jobs management page."""
+    jobs_page()
 
 
 if __name__ in {"__main__", "__mp_main__"}:

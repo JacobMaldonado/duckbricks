@@ -31,3 +31,11 @@ def layout_frame(title: str = "DuckBricks") -> None:
             ):
                 ui.icon("code").classes("text-grey-7")
                 ui.label("Query Editor").classes("text-grey-9 text-body2")
+
+            with (
+                ui.row()
+                .classes("items-center gap-2 q-pl-xs cursor-pointer")
+                .on("click", lambda: ui.navigate.to("/jobs"))
+            ):
+                ui.icon("schedule").classes("text-grey-7")
+                ui.label("Jobs").classes("text-grey-9 text-body2")

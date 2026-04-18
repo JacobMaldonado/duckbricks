@@ -105,13 +105,13 @@ def _render_job_row(job: Job, jobs_container: ui.column) -> None:
 def _run_job_now(job: Job, jobs_container: ui.column) -> None:
     notification = ui.notification(f"Running job '{job.name}'...", type="ongoing", timeout=None)
     try:
-        _job_service.run_job(job.id)
+        execution = _job_service.run_job(job.id)
         notification.dismiss()
-        ui.notification(f"Job '{job.name}' completed successfully.", type="positive")
+        ui.navigate.to(f"/jobs/execution/{execution.id}")
     except Exception as e:
         notification.dismiss()
         ui.notification(f"Job '{job.name}' failed: {e}", type="negative")
-    _render_jobs_list(jobs_container)
+        _render_jobs_list(jobs_container)
 
 
 def _confirm_delete_job(job: Job, jobs_container: ui.column) -> None:
@@ -141,33 +141,38 @@ def _open_run_history(job: Job) -> None:
         if not executions:
             ui.label("No runs yet.").classes("text-grey-6")
         else:
-            columns = [
-                {"name": "id", "label": "Run #", "field": "id", "align": "left"},
-                {"name": "status", "label": "Status", "field": "status", "align": "left"},
-                {
-                    "name": "started_at",
-                    "label": "Started",
-                    "field": "started_at",
-                    "align": "left",
-                },
-                {
-                    "name": "duration_ms",
-                    "label": "Duration (ms)",
-                    "field": "duration_ms",
-                    "align": "right",
-                },
-            ]
-            rows = [
-                {
-                    "id": ex.id,
-                    "status": ex.status,
-                    "started_at": str(ex.started_at)[:19] if ex.started_at else "",
-                    "duration_ms": ex.duration_ms or "",
-                }
-                for ex in executions
-            ]
-            ui.table(columns=columns, rows=rows).classes("w-full")
+            for ex in executions:
+                _render_execution_summary_row(ex, dialog)
     dialog.open()
+
+
+def _render_execution_summary_row(execution, dialog) -> None:
+    status_colors = {
+        "success": "green",
+        "failed": "red",
+        "running": "blue",
+        "cancelled": "grey",
+    }
+    color = status_colors.get(execution.status, "grey")
+    started = str(execution.started_at)[:19] if execution.started_at else "—"
+    duration = f"{execution.duration_ms} ms" if execution.duration_ms else "—"
+
+    with (
+        ui.card()
+        .classes("w-full cursor-pointer hover:bg-grey-2")
+        .on(
+            "click",
+            lambda ex=execution: [dialog.close(), ui.navigate.to(f"/jobs/execution/{ex.id}")],
+        )
+    ):
+        with ui.row().classes("w-full items-center justify-between q-pa-sm"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("circle", color=color).classes("text-xs")
+                ui.label(f"Run #{execution.id}").classes("text-weight-medium")
+                ui.label(execution.status.upper()).classes(f"text-caption text-{color}")
+            with ui.row().classes("items-center gap-4"):
+                ui.label(started).classes("text-caption text-grey-6")
+                ui.label(duration).classes("text-caption text-grey-6")
 
 
 def _open_job_dialog(job: Job | None, jobs_container: ui.column | None) -> None:

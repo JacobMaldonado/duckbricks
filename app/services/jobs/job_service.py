@@ -116,6 +116,74 @@ class JobService:
             session.expunge_all()
             return executions
 
+    def get_execution(self, execution_id: int) -> dict | None:
+        """Return a fully-hydrated plain dict for an execution and all its task runs."""
+        with get_session() as session:
+            execution = session.query(JobExecution).filter(JobExecution.id == execution_id).first()
+            if not execution:
+                return None
+
+            job_name = execution.job.name if execution.job else f"Job #{execution.job_id}"
+            job_tasks_by_id = {t.id: t for t in execution.job.tasks}
+
+            task_execution_snapshots = [
+                {
+                    "id": te.id,
+                    "task_id": te.task_id,
+                    "task_name": job_tasks_by_id[te.task_id].name
+                    if te.task_id in job_tasks_by_id
+                    else f"Task #{te.task_id}",
+                    "executor_type": job_tasks_by_id[te.task_id].executor_type
+                    if te.task_id in job_tasks_by_id
+                    else "unknown",
+                    "position": job_tasks_by_id[te.task_id].position
+                    if te.task_id in job_tasks_by_id
+                    else 0,
+                    "status": te.status,
+                    "started_at": te.started_at,
+                    "completed_at": te.completed_at,
+                    "duration_ms": te.duration_ms,
+                    "output": te.output,
+                    "error_message": te.error_message,
+                }
+                for te in execution.task_executions
+            ]
+
+            completed_task_ids = {te.task_id for te in execution.task_executions}
+            pending_snapshots = [
+                {
+                    "id": None,
+                    "task_id": t.id,
+                    "task_name": t.name,
+                    "executor_type": t.executor_type,
+                    "position": t.position,
+                    "status": "pending",
+                    "started_at": None,
+                    "completed_at": None,
+                    "duration_ms": None,
+                    "output": None,
+                    "error_message": None,
+                }
+                for t in execution.job.tasks
+                if t.id not in completed_task_ids
+            ]
+
+            all_tasks = sorted(
+                task_execution_snapshots + pending_snapshots, key=lambda t: t["position"]
+            )
+
+            return {
+                "id": execution.id,
+                "job_id": execution.job_id,
+                "job_name": job_name,
+                "status": execution.status,
+                "started_at": execution.started_at,
+                "completed_at": execution.completed_at,
+                "duration_ms": execution.duration_ms,
+                "error_message": execution.error_message,
+                "task_executions": all_tasks,
+            }
+
     def _create_job_execution(self, job_id: int) -> JobExecution:
         with get_session() as session:
             execution = JobExecution(job_id=job_id, status="running")

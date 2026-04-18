@@ -10,6 +10,7 @@ from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
 from app.ui.pages.explorer import explorer_page
+from app.ui.pages.job_execution import job_execution_page
 from app.ui.pages.jobs import jobs_page
 from app.ui.pages.query import query_workspace
 
@@ -65,6 +66,12 @@ def query():
 def jobs():
     """Jobs management page."""
     jobs_page()
+
+
+@ui.page("/jobs/execution/{execution_id}")
+def job_execution(execution_id: int):
+    """Job execution detail page."""
+    job_execution_page(execution_id)
 
 
 if __name__ in {"__main__", "__mp_main__"}:

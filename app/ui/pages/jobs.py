@@ -1,7 +1,9 @@
 """Jobs page — create, manage, and monitor scheduled DuckBricks jobs."""
 
 from nicegui import ui
+from sqlalchemy.exc import OperationalError
 
+from app.services.database.connection import DatabaseConnection
 from app.services.database.models.app import Job
 from app.services.jobs import JobService
 from app.ui.components.layout import layout_frame
@@ -20,9 +22,24 @@ def jobs_page() -> None:
     layout_frame("Jobs")
 
     with ui.column().classes("w-full h-full p-4 gap-4"):
+        if not DatabaseConnection.is_available() and not DatabaseConnection.check_connectivity():
+            _render_db_unavailable_banner()
+            return
         _render_page_header()
         jobs_container = ui.column().classes("w-full gap-2")
         _render_jobs_list(jobs_container)
+
+
+def _render_db_unavailable_banner() -> None:
+    with ui.card().classes("w-full bg-orange-1 border-orange"):
+        with ui.row().classes("items-center gap-3 q-pa-md"):
+            ui.icon("warning", color="orange").classes("text-h5")
+            with ui.column().classes("gap-1"):
+                ui.label("PostgreSQL not available").classes("text-weight-bold text-orange-9")
+                ui.label(
+                    "The Jobs feature requires a running PostgreSQL database. "
+                    "Start the full stack with docker compose up, or set DATABASE_URL in your .env."
+                ).classes("text-caption text-grey-7")
 
 
 def _render_page_header() -> None:
@@ -33,7 +50,12 @@ def _render_page_header() -> None:
 
 def _render_jobs_list(container: ui.column) -> None:
     container.clear()
-    jobs = _job_service.list_jobs()
+    try:
+        jobs = _job_service.list_jobs()
+    except OperationalError:
+        with container:
+            _render_db_unavailable_banner()
+        return
 
     if not jobs:
         with container:

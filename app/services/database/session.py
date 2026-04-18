@@ -32,3 +32,4 @@ def init_database() -> None:
         conn.execute(text("CREATE SCHEMA IF NOT EXISTS app"))
         conn.commit()
     Base.metadata.create_all(bind=engine)
+    DatabaseConnection.mark_available(True)

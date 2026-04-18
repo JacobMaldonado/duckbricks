@@ -1,5 +1,6 @@
 """DuckBricks — NiceGUI application entry point."""
 
+import logging
 import os
 
 from nicegui import app, ui
@@ -11,6 +12,12 @@ from app.services.metastore import manager
 from app.ui.pages.explorer import explorer_page
 from app.ui.pages.jobs import jobs_page
 from app.ui.pages.query import query_workspace
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 
 def startup():
@@ -34,6 +41,7 @@ app.add_static_files("/static", "app/ui/static")
 async def completion_schema() -> dict:
     """Return catalog/schema/table/column structure for SQL autocompletion."""
     return CompletionSchemaProvider(manager).build()
+
 
 @ui.page("/")
 def index():

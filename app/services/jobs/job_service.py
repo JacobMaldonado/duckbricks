@@ -88,10 +88,18 @@ class JobService:
             job = session.query(Job).filter(Job.id == job_id).first()
             if not job:
                 raise ValueError(f"Job {job_id} not found")
-            tasks = list(job.tasks)
+            task_snapshots = [
+                {
+                    "id": t.id,
+                    "executor_type": t.executor_type,
+                    "content": t.content,
+                    "position": t.position,
+                }
+                for t in job.tasks
+            ]
 
         execution = self._create_job_execution(job_id)
-        self._execute_tasks(execution.id, tasks)
+        self._execute_tasks(execution.id, task_snapshots)
         return self._finalize_job_execution(execution.id)
 
     def list_executions(self, job_id: int) -> list[JobExecution]:
@@ -116,13 +124,13 @@ class JobService:
             session.refresh(execution)
             return self._detach(execution, session)
 
-    def _execute_tasks(self, execution_id: int, tasks: list[JobTask]) -> None:
-        for task in sorted(tasks, key=lambda t: t.position):
+    def _execute_tasks(self, execution_id: int, task_snapshots: list[dict[str, Any]]) -> None:
+        for snapshot in sorted(task_snapshots, key=lambda t: t["position"]):
             start = monotonic()
-            executor = ExecutorRegistry.resolve(task.executor_type)
-            result = executor.execute(task.content, {})
+            executor = ExecutorRegistry.resolve(snapshot["executor_type"])
+            result = executor.execute(snapshot["content"], {})
             duration_ms = int((monotonic() - start) * 1000)
-            self._save_task_execution(execution_id, task.id, result, duration_ms)
+            self._save_task_execution(execution_id, snapshot["id"], result, duration_ms)
 
     def _save_task_execution(
         self, execution_id: int, task_id: int, result: dict[str, Any], duration_ms: int

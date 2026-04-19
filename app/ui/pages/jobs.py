@@ -282,11 +282,13 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
 
         elements["name"] = ui.input("Task name", value=task_def.get("name", "")).classes("w-full")
 
-        elements["executor_type"] = ui.select(
+        initial_executor = task_def.get("executor_type", "sql")
+        executor_select = ui.select(
             ["sql", "python"],
             label="Executor type",
-            value=task_def.get("executor_type", "sql"),
+            value=initial_executor,
         ).classes("w-full")
+        elements["executor_type"] = executor_select
 
         use_file = bool(task_def.get("file_path"))
         mode_toggle = ui.toggle(
@@ -294,10 +296,16 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
             value="File" if use_file else "Inline",
         ).classes("q-mt-sm")
 
-        inline_area = ui.textarea(
-            "Content (SQL query or Python script)",
-            value=task_def.get("content", ""),
-        ).classes("w-full font-mono")
+        initial_lang = "SQL" if initial_executor == "sql" else "Python"
+        inline_editor = (
+            ui.codemirror(
+                value=task_def.get("content", ""),
+                language=initial_lang,
+                theme="githubLight",
+            )
+            .classes("w-full")
+            .style("min-height: 120px")
+        )
 
         workspace_files = _list_workspace_files(["sql", "py", "ipynb"])
         file_path = task_def.get("file_path")
@@ -309,16 +317,22 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
 
         def _apply_mode(mode: str) -> None:
             if mode == "File":
-                inline_area.set_visibility(False)
+                inline_editor.set_visibility(False)
                 file_select.set_visibility(True)
             else:
-                inline_area.set_visibility(True)
+                inline_editor.set_visibility(True)
                 file_select.set_visibility(False)
+
+        def _apply_executor_language(executor: str) -> None:
+            lang = "SQL" if executor == "sql" else "Python"
+            inline_editor.set_language(lang)
+            inline_editor.update()
 
         _apply_mode(mode_toggle.value)
         mode_toggle.on_value_change(lambda e: _apply_mode(e.value))
+        executor_select.on_value_change(lambda e: _apply_executor_language(e.value))
 
-        elements["content"] = inline_area
+        elements["content"] = inline_editor
         elements["file_path"] = file_select
         elements["mode"] = mode_toggle
 

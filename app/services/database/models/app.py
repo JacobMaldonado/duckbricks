@@ -42,7 +42,8 @@ class JobTask(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     executor_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    file_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     job: Mapped["Job"] = relationship("Job", back_populates="tasks")

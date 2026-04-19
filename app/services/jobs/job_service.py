@@ -75,6 +75,21 @@ class JobService:
             session.refresh(task)
             return self._detach(task, session)
 
+    def replace_tasks(self, job_id: int, task_dicts: list[dict]) -> None:
+        """Delete all existing tasks for a job and insert the provided list."""
+        with get_session() as session:
+            session.query(JobTask).filter(JobTask.job_id == job_id).delete()
+            for idx, td in enumerate(task_dicts):
+                task = JobTask(
+                    job_id=job_id,
+                    name=td.get("name") or f"Task {idx + 1}",
+                    executor_type=td.get("executor_type", "sql"),
+                    content=td.get("content", ""),
+                    file_path=td.get("file_path"),
+                    position=idx,
+                )
+                session.add(task)
+
     def remove_task(self, task_id: int) -> bool:
         with get_session() as session:
             task = session.query(JobTask).filter(JobTask.id == task_id).first()
@@ -93,6 +108,7 @@ class JobService:
                     "id": t.id,
                     "executor_type": t.executor_type,
                     "content": t.content,
+                    "file_path": t.file_path,
                     "position": t.position,
                 }
                 for t in job.tasks
@@ -194,11 +210,23 @@ class JobService:
 
     def _execute_tasks(self, execution_id: int, task_snapshots: list[dict[str, Any]]) -> None:
         for snapshot in sorted(task_snapshots, key=lambda t: t["position"]):
+            content = self._resolve_task_content(snapshot)
             start = monotonic()
             executor = ExecutorRegistry.resolve(snapshot["executor_type"])
-            result = executor.execute(snapshot["content"], {})
+            result = executor.execute(content, {})
             duration_ms = int((monotonic() - start) * 1000)
             self._save_task_execution(execution_id, snapshot["id"], result, duration_ms)
+
+    def _resolve_task_content(self, snapshot: dict[str, Any]) -> str:
+        """Return inline content or read from file_path if one is set."""
+        file_path = snapshot.get("file_path")
+        if not file_path:
+            return snapshot.get("content", "")
+        try:
+            with open(file_path) as fh:
+                return fh.read()
+        except OSError as exc:
+            raise ValueError(f"Cannot read task file '{file_path}': {exc}") from exc
 
     def _save_task_execution(
         self, execution_id: int, task_id: int, result: dict[str, Any], duration_ms: int

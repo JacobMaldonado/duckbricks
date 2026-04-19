@@ -2,10 +2,11 @@
 
 import logging
 import os
+from pathlib import Path
 
 from nicegui import app, ui
 
-from app.config import CATALOG_PATH, HOST, PORT, RELOAD
+from app.config import CATALOG_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
@@ -13,6 +14,7 @@ from app.ui.pages.explorer import explorer_page
 from app.ui.pages.job_execution import job_execution_page
 from app.ui.pages.jobs import jobs_page
 from app.ui.pages.query import query_workspace
+from app.ui.pages.workspace import workspace_page
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -23,6 +25,7 @@ logging.basicConfig(
 
 def startup():
     """Auto-initialize metastore on startup if catalog already exists."""
+    Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
     if os.path.exists(CATALOG_PATH):
         try:
             manager.initialize()
@@ -72,6 +75,12 @@ def jobs():
 def job_execution(execution_id: int):
     """Job execution detail page."""
     job_execution_page(execution_id)
+
+
+@ui.page("/workspace")
+def workspace():
+    """Workspace file manager."""
+    workspace_page()
 
 
 if __name__ in {"__main__", "__mp_main__"}:

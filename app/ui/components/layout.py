@@ -39,3 +39,11 @@ def layout_frame(title: str = "DuckBricks") -> None:
             ):
                 ui.icon("schedule").classes("text-grey-7")
                 ui.label("Jobs").classes("text-grey-9 text-body2")
+
+            with (
+                ui.row()
+                .classes("items-center gap-2 q-pl-xs cursor-pointer")
+                .on("click", lambda: ui.navigate.to("/workspace"))
+            ):
+                ui.icon("folder_open").classes("text-grey-7")
+                ui.label("Workspace").classes("text-grey-9 text-body2")

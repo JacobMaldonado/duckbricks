@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from nicegui import ui
 
-from app.config import WORKSPACE_PATH
+from app.config import MARIMO_URL, WORKSPACE_PATH
 from app.services.workspace import WorkspaceService
 from app.services.workspace.workspace_service import WorkspaceNode
 from app.ui.components.layout import layout_frame
@@ -21,10 +22,28 @@ _ICON_BY_EXTENSION = {
     ".txt": ("text_snippet", "grey-6"),
 }
 
+_CODEMIRROR_LANGUAGE_BY_EXTENSION: dict[str, str | None] = {
+    ".sql": "SQL",
+    ".py": "Python",
+    ".ipynb": None,
+    ".md": "Markdown",
+    ".txt": None,
+}
+
 
 def workspace_page() -> None:
     """Render the Workspace page with a file tree and code editor panel."""
     layout_frame("Workspace")
+
+    ui.add_head_html("""
+    <style>
+    .cm-editor .cm-tooltip-autocomplete { z-index: 9999 !important; }
+    .cm-editor { overflow: visible !important; }
+    .ws-editor .nicegui-codemirror { height: 100% !important; }
+    .ws-editor .cm-editor { height: 100% !important; }
+    .ws-editor .cm-scroller { overflow: auto !important; }
+    </style>
+    """)
 
     with ui.row().classes("w-full h-full gap-0").style("height: calc(100vh - 60px)"):
         _render_file_tree_panel()
@@ -77,6 +96,7 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
         icon, color = _ICON_BY_EXTENSION.get(
             Path(node.name).suffix, ("insert_drive_file", "grey-6")
         )
+        is_python = Path(node.name).suffix == ".py"
         with (
             ui.row()
             .classes(
@@ -88,6 +108,11 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
             ui.icon(icon, color=color).classes("text-sm")
             ui.label(node.name).classes("text-body2 text-grey-9")
             ui.space()
+            if is_python:
+                ui.button(
+                    icon="rocket_launch",
+                    on_click=lambda: ui.run_javascript(f"window.open('{MARIMO_URL}', '_blank')"),
+                ).props("flat dense size=xs color=purple").tooltip("Open in Marimo")
             ui.button(
                 icon="delete",
                 on_click=lambda n=node, c=tree_container: _delete_item(n, c),
@@ -95,25 +120,33 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
 
 
 def _render_editor_panel() -> None:
-    with ui.column().classes("flex-1 q-pa-md gap-2").style("overflow: hidden; height: 100%"):
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label("Editor").classes("text-weight-bold text-body2 text-grey-7")
+    with (
+        ui.column()
+        .classes("flex-1 q-pa-md gap-2 ws-editor")
+        .style("overflow: hidden; height: 100%; display: flex; flex-direction: column")
+    ):
+        with ui.row().classes("w-full items-center justify-between").style("flex-shrink: 0"):
+            current_file_label = ui.label("— no file open —").classes("text-caption text-grey-5")
             with ui.row().classes("gap-2"):
                 ui.button("Save", icon="save", on_click=_save_current_file).props(
                     "flat color=primary"
-                ).tooltip("Save file (Ctrl+S)")
+                ).tooltip("Save file")
 
-        ui.context.client.storage["_ws_current_path"] = ""
-        current_file_label = ui.label("— no file open —").classes("text-caption text-grey-5")
         editor = (
-            ui.textarea()
-            .classes("w-full font-mono")
-            .style("flex: 1; height: calc(100vh - 180px); font-family: monospace; font-size: 13px")
-            .props("outlined autogrow")
+            ui.codemirror(
+                value="",
+                language=None,
+                theme="githubLight",
+            )
+            .classes("w-full")
+            .style("flex: 1; min-height: 0; overflow: visible")
         )
 
+        ui.context.client.storage["_ws_current_path"] = ""
         ui.context.client.storage["_ws_editor"] = editor
+        ui.context.client.storage["_ws_editor_id"] = editor.id
         ui.context.client.storage["_ws_label"] = current_file_label
+        ui.context.client.storage["_ws_lang"] = None
 
 
 def _open_file_in_editor(relative_path: str) -> None:
@@ -122,20 +155,39 @@ def _open_file_in_editor(relative_path: str) -> None:
     except FileNotFoundError:
         ui.notification(f"File not found: {relative_path}", type="warning")
         return
+
+    extension = Path(relative_path).suffix.lower()
+    language = _CODEMIRROR_LANGUAGE_BY_EXTENSION.get(extension)
+
     storage = ui.context.client.storage
     storage["_ws_current_path"] = relative_path
-    editor: ui.textarea = storage.get("_ws_editor")
+    storage["_ws_lang"] = language
+
+    editor: ui.codemirror = storage.get("_ws_editor")
     label: ui.label = storage.get("_ws_label")
+
     if editor:
+        editor.set_language(language)
         editor.set_value(content)
+        editor.update()
+
     if label:
         label.set_text(relative_path)
+
+    if language == "SQL":
+        editor_id = storage.get("_ws_editor_id")
+        cache_bust = int(time.time())
+        ui.run_javascript(
+            f"import('/static/sql_completion.js?v={cache_bust}')"
+            f".then(m => m.mount({editor_id}, {{}}))"
+            f".catch(e => console.error('[sql_completion workspace]', e))"
+        )
 
 
 def _save_current_file() -> None:
     storage = ui.context.client.storage
     relative_path: str = storage.get("_ws_current_path", "")
-    editor: ui.textarea = storage.get("_ws_editor")
+    editor: ui.codemirror = storage.get("_ws_editor")
     if not relative_path:
         ui.notification("No file is currently open.", type="warning")
         return

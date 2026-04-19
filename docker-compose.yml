@@ -29,6 +29,18 @@ services:
       retries: 5
     restart: unless-stopped
 
+  marimo:
+    image: python:3.12-slim
+    command: >
+      sh -c "pip install --no-cache-dir marimo &&
+             marimo edit --no-token --host 0.0.0.0 --port 2718"
+    working_dir: /data/workspace
+    volumes:
+      - duckbricks-data:/data
+    ports:
+      - "2718:2718"
+    restart: unless-stopped
+
 volumes:
   duckbricks-data:
   postgres-data:

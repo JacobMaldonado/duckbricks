@@ -27,3 +27,5 @@ DATABASE_URL: str = os.getenv(
 )
 
 WORKSPACE_PATH: str = os.getenv("DUCKBRICKS_WORKSPACE_PATH", "./workspace")
+
+MARIMO_URL: str = os.getenv("MARIMO_URL", "http://localhost:2718")

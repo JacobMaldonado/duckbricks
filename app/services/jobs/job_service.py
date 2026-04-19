@@ -115,7 +115,11 @@ class JobService:
             ]
 
         execution = self._create_job_execution(job_id)
-        self._execute_tasks(execution.id, task_snapshots)
+        try:
+            self._execute_tasks(execution.id, task_snapshots)
+        except Exception as exc:
+            self._mark_execution_failed(execution.id, str(exc))
+            raise
         return self._finalize_job_execution(execution.id)
 
     def list_executions(self, job_id: int) -> list[JobExecution]:
@@ -231,11 +235,12 @@ class JobService:
     def _save_task_execution(
         self, execution_id: int, task_id: int, result: dict[str, Any], duration_ms: int
     ) -> None:
+        normalized_status = "failed" if result["status"] == "error" else result["status"]
         with get_session() as session:
             task_exec = TaskExecution(
                 job_execution_id=execution_id,
                 task_id=task_id,
-                status=result["status"],
+                status=normalized_status,
                 completed_at=datetime.now(UTC),
                 duration_ms=duration_ms,
                 output=result.get("output"),
@@ -243,14 +248,22 @@ class JobService:
             )
             session.add(task_exec)
 
+    def _mark_execution_failed(self, execution_id: int, reason: str) -> None:
+        with get_session() as session:
+            execution = session.query(JobExecution).filter(JobExecution.id == execution_id).first()
+            if execution:
+                execution.status = "failed"
+                execution.completed_at = datetime.now(UTC)
+                session.flush()
+
     def _finalize_job_execution(self, execution_id: int) -> JobExecution:
         with get_session() as session:
             execution = session.query(JobExecution).filter(JobExecution.id == execution_id).first()
             if not execution:
                 raise ValueError(f"JobExecution {execution_id} not found")
             task_executions = list(execution.task_executions)
-            has_error = any(t.status == "error" for t in task_executions)
-            execution.status = "failed" if has_error else "success"
+            has_failure = any(t.status == "failed" for t in task_executions)
+            execution.status = "failed" if has_failure else "success"
             execution.completed_at = datetime.now(UTC)
             session.flush()
             session.refresh(execution)

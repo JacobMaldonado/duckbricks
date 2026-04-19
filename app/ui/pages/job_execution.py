@@ -67,16 +67,11 @@ def _render_execution(execution_id: int, container: ui.column) -> None:
         _render_task_list(execution)
 
     if execution["status"] == "running":
-        timer = ui.timer(
-            2.0,
-            lambda: _refresh_if_running(execution_id, container, timer),
-        )
+        ui.timer(2.0, lambda: _refresh_running(execution_id, container), once=True)
 
 
-def _refresh_if_running(execution_id: int, container: ui.column, timer: ui.timer) -> None:
-    execution = _job_service.get_execution(execution_id)
-    if execution is None or execution["status"] != "running":
-        timer.cancel()
+def _refresh_running(execution_id: int, container: ui.column) -> None:
+    """Poll once; re-schedule only while execution is still running."""
     _render_execution(execution_id, container)
 
 

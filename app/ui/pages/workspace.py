@@ -31,6 +31,17 @@ _CODEMIRROR_LANGUAGE_BY_EXTENSION: dict[str, str | None] = {
     ".txt": None,
 }
 
+_MARIMO_NOTEBOOK_TEMPLATE = """\
+import marimo
+
+__generated_with = "0.10.0"
+app = marimo.App()
+
+
+if __name__ == "__main__":
+    app.run()
+"""
+
 _DRAG_DROP_JS = """
 <style>
 .cm-editor .cm-tooltip-autocomplete { z-index: 9999 !important; }
@@ -216,6 +227,11 @@ def _open_file_in_editor(relative_path: str) -> None:
     extension = Path(relative_path).suffix.lower()
     language = _CODEMIRROR_LANGUAGE_BY_EXTENSION.get(extension)
 
+    if extension == ".py" and "import marimo" not in content:
+        content = _MARIMO_NOTEBOOK_TEMPLATE + content
+        _workspace_service.write_file(relative_path, content)
+        ui.notification("Marimo header added automatically.", type="info")
+
     storage = ui.context.client.storage
     storage["_ws_current_path"] = relative_path
     storage["_ws_lang"] = language
@@ -382,7 +398,8 @@ def _create_new_file(relative_path: str, dialog) -> None:
         ui.notification("Path is required.", type="warning")
         return
     try:
-        _workspace_service.write_file(relative_path, "")
+        initial_content = _MARIMO_NOTEBOOK_TEMPLATE if relative_path.endswith(".py") else ""
+        _workspace_service.write_file(relative_path, initial_content)
         dialog.close()
         ui.notification(f"Created: {relative_path}", type="positive")
         ui.navigate.to("/workspace")

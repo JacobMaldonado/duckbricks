@@ -92,3 +92,54 @@ class TestWorkspaceServiceSecurity:
     def test_traversal_attack_raises_value_error(self, workspace):
         with pytest.raises(ValueError, match="escapes the workspace root"):
             workspace.read_file("../../etc/passwd")
+
+
+class TestWorkspaceServiceClone:
+    def test_clone_file_creates_copy_in_same_folder(self, workspace):
+        workspace.write_file("query.sql", "SELECT 1")
+        cloned = workspace.clone("query.sql")
+        assert cloned == "query_copy.sql"
+        assert workspace.read_file(cloned) == "SELECT 1"
+
+    def test_clone_file_avoids_name_collision(self, workspace):
+        workspace.write_file("query.sql", "SELECT 1")
+        workspace.clone("query.sql")
+        second_clone = workspace.clone("query.sql")
+        assert second_clone == "query_copy1.sql"
+
+    def test_clone_directory_copies_all_contents(self, workspace):
+        workspace.write_file("myfolder/a.sql", "SELECT 1")
+        workspace.write_file("myfolder/b.py", "print(1)")
+        workspace.clone("myfolder")
+        assert workspace.read_file("myfolder_copy/a.sql") == "SELECT 1"
+        assert workspace.read_file("myfolder_copy/b.py") == "print(1)"
+
+    def test_clone_raises_for_missing_source(self, workspace):
+        with pytest.raises(FileNotFoundError):
+            workspace.clone("nonexistent.sql")
+
+
+class TestWorkspaceServiceMove:
+    def test_move_file_into_folder(self, workspace):
+        workspace.write_file("query.sql", "SELECT 1")
+        workspace.create_folder("archive")
+        new_path = workspace.move("query.sql", "archive")
+        assert new_path == "archive/query.sql"
+        assert workspace.read_file("archive/query.sql") == "SELECT 1"
+
+    def test_move_raises_for_missing_source(self, workspace):
+        workspace.create_folder("archive")
+        with pytest.raises(FileNotFoundError):
+            workspace.move("ghost.sql", "archive")
+
+    def test_move_raises_when_dest_is_not_a_directory(self, workspace):
+        workspace.write_file("query.sql", "SELECT 1")
+        workspace.write_file("other.sql", "SELECT 2")
+        with pytest.raises(ValueError, match="not a directory"):
+            workspace.move("query.sql", "other.sql")
+
+    def test_move_raises_on_name_collision(self, workspace):
+        workspace.write_file("query.sql", "SELECT 1")
+        workspace.write_file("archive/query.sql", "SELECT 2")
+        with pytest.raises(ValueError, match="already exists"):
+            workspace.move("query.sql", "archive")

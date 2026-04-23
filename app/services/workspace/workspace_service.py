@@ -94,6 +94,39 @@ class WorkspaceService:
         full_path.rename(new_full_path)
         return str(new_full_path.relative_to(self._root))
 
+    def clone(self, relative_path: str) -> str:
+        """Clone a file or folder to a new name in the same parent directory."""
+        full_path = self._resolve_safe(relative_path)
+        if not full_path.exists():
+            raise FileNotFoundError(f"Path not found: {relative_path}")
+        parent = full_path.parent
+        stem = full_path.stem if full_path.is_file() else full_path.name
+        suffix = full_path.suffix if full_path.is_file() else ""
+        candidate = parent / f"{stem}_copy{suffix}"
+        counter = 1
+        while candidate.exists():
+            candidate = parent / f"{stem}_copy{counter}{suffix}"
+            counter += 1
+        if full_path.is_dir():
+            shutil.copytree(full_path, candidate)
+        else:
+            shutil.copy2(full_path, candidate)
+        return str(candidate.relative_to(self._root))
+
+    def move(self, source_path: str, dest_dir_path: str) -> str:
+        """Move a file or folder into a destination directory."""
+        source = self._resolve_safe(source_path)
+        dest_dir = self._resolve_safe(dest_dir_path)
+        if not source.exists():
+            raise FileNotFoundError(f"Source not found: {source_path}")
+        if not dest_dir.is_dir():
+            raise ValueError(f"Destination is not a directory: {dest_dir_path}")
+        new_path = dest_dir / source.name
+        if new_path.exists():
+            raise ValueError(f"A file named '{source.name}' already exists in '{dest_dir_path}'.")
+        shutil.move(str(source), str(new_path))
+        return str(new_path.relative_to(self._root))
+
     def absolute_path(self, relative_path: str) -> str:
         """Return the absolute filesystem path for a workspace-relative path."""
         return str(self._resolve_safe(relative_path))

@@ -1,11 +1,18 @@
 """DuckDB + DuckLake connection manager."""
 
-import os
 import threading
 
 import duckdb
 
-from app.config import CATALOG_PATH, DATA_PATH, DUCKLAKE_NAME
+from app.config import (
+    DATA_PATH,
+    DUCKLAKE_NAME,
+    DUCKLAKE_PG_DATABASE,
+    DUCKLAKE_PG_HOST,
+    DUCKLAKE_PG_PASSWORD,
+    DUCKLAKE_PG_PORT,
+    DUCKLAKE_PG_USER,
+)
 
 
 class MetastoreManager:
@@ -16,12 +23,22 @@ class MetastoreManager:
         self._conn: duckdb.DuckDBPyConnection | None = None
         self._initialized = False
 
-    def _ensure_data_path(self):
-        os.makedirs(os.path.dirname(CATALOG_PATH), exist_ok=True)
+    def _ensure_data_path(self) -> None:
+        import os
+
         os.makedirs(DATA_PATH, exist_ok=True)
 
+    def _build_catalog_connection_string(self) -> str:
+        return (
+            f"host={DUCKLAKE_PG_HOST} "
+            f"port={DUCKLAKE_PG_PORT} "
+            f"dbname={DUCKLAKE_PG_DATABASE} "
+            f"user={DUCKLAKE_PG_USER} "
+            f"password={DUCKLAKE_PG_PASSWORD}"
+        )
+
     def initialize(self) -> dict:
-        """Initialize or attach the DuckLake metastore."""
+        """Initialize the DuckLake metastore backed by PostgreSQL."""
         with self._lock:
             self._ensure_data_path()
             if self._conn is not None:
@@ -29,8 +46,11 @@ class MetastoreManager:
 
             self._conn = duckdb.connect()
             self._conn.execute("INSTALL ducklake; LOAD ducklake;")
+            self._conn.execute("INSTALL postgres; LOAD postgres;")
+
+            catalog_dsn = self._build_catalog_connection_string()
             self._conn.execute(
-                f"ATTACH 'ducklake:{CATALOG_PATH}' AS {DUCKLAKE_NAME} "
+                f"ATTACH 'ducklake:postgres:{catalog_dsn}' AS {DUCKLAKE_NAME} "
                 f"(DATA_PATH '{DATA_PATH}', AUTOMATIC_MIGRATION TRUE)"
             )
             self._conn.execute(f"USE {DUCKLAKE_NAME}")
@@ -41,10 +61,11 @@ class MetastoreManager:
         """Return metastore status."""
         return {
             "initialized": self._initialized,
-            "catalog_path": CATALOG_PATH,
+            "catalog_backend": "postgresql",
+            "catalog_host": DUCKLAKE_PG_HOST,
+            "catalog_database": DUCKLAKE_PG_DATABASE,
             "data_path": DATA_PATH,
             "ducklake_name": DUCKLAKE_NAME,
-            "catalog_exists": os.path.exists(CATALOG_PATH),
         }
 
     @property
@@ -290,7 +311,8 @@ class MetastoreManager:
                 "catalog": catalog,
                 "schema": schema,
                 "table": table,
-                "catalog_path": CATALOG_PATH,
+                "catalog_backend": "postgresql",
+                "catalog_host": DUCKLAKE_PG_HOST,
                 "data_path": DATA_PATH,
                 "file_count": None,
                 "total_size_bytes": None,

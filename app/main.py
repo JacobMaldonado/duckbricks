@@ -1,12 +1,11 @@
 """DuckBricks — NiceGUI application entry point."""
 
 import logging
-import os
 from pathlib import Path
 
 from nicegui import app, ui
 
-from app.config import CATALOG_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
+from app.config import HOST, PORT, RELOAD, WORKSPACE_PATH
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
@@ -24,13 +23,12 @@ logging.basicConfig(
 
 
 def startup():
-    """Auto-initialize metastore on startup if catalog already exists."""
+    """Auto-initialize metastore and application database on startup."""
     Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
-    if os.path.exists(CATALOG_PATH):
-        try:
-            manager.initialize()
-        except Exception as e:
-            print(f"Warning: Could not auto-attach existing metastore: {e}")
+    try:
+        manager.initialize()
+    except Exception as e:
+        print(f"Warning: Could not auto-initialize metastore: {e}")
     try:
         init_database()
     except Exception as e:

@@ -32,6 +32,13 @@ _CODEMIRROR_LANGUAGE_BY_EXTENSION: dict[str, str | None] = {
 }
 
 _MARIMO_NOTEBOOK_TEMPLATE = """\
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#     "duckdb",
+#     "sqlglot",
+# ]
+# ///
 import marimo
 
 __generated_with = "0.10.0"

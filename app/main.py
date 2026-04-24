@@ -1,11 +1,12 @@
 """DuckBricks — NiceGUI application entry point."""
 
 import logging
+import shutil
 from pathlib import Path
 
 from nicegui import app, ui
 
-from app.config import HOST, PORT, RELOAD, WORKSPACE_PATH
+from app.config import HELPERS_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
@@ -21,10 +22,20 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
+_HELPERS_SOURCE = Path(__file__).parent / "helpers" / "duckbricks_utils.py"
+
+
+def _deploy_workspace_helpers() -> None:
+    """Copy the DuckBricks utilities module to the shared helpers directory."""
+    dest = Path(HELPERS_PATH)
+    dest.mkdir(parents=True, exist_ok=True)
+    shutil.copy(_HELPERS_SOURCE, dest / "duckbricks_utils.py")
+
 
 def startup():
     """Auto-initialize metastore and application database on startup."""
     Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
+    _deploy_workspace_helpers()
     try:
         manager.initialize()
     except Exception as e:

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from nicegui import ui
 
-from app.config import MARIMO_URL, WORKSPACE_PATH
+from app.config import MARIMO_TOKEN_PASSWORD, MARIMO_URL, WORKSPACE_PATH
 from app.services.workspace import WorkspaceService
 from app.services.workspace.workspace_service import WorkspaceNode
 from app.ui.components.layout import layout_frame
@@ -150,7 +150,7 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
             ui.label(node.name).classes("text-body2 text-grey-9")
             ui.space()
             if is_python:
-                marimo_file_url = f"{MARIMO_URL}/?file={urllib.parse.quote(node.path)}"
+                marimo_file_url = f"{MARIMO_URL}/?file={urllib.parse.quote(node.path)}&access_token={MARIMO_TOKEN_PASSWORD}"
                 ui.button(
                     icon="rocket_launch",
                     on_click=lambda url=marimo_file_url: ui.run_javascript(

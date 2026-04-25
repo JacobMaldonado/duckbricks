@@ -22,14 +22,16 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-_HELPERS_SOURCE = Path(__file__).parent / "helpers" / "duckbricks_utils.py"
+_HELPERS_DIR = Path(__file__).parent / "helpers"
 
 
 def _deploy_workspace_helpers() -> None:
-    """Copy the DuckBricks utilities module to the shared helpers directory."""
+    """Copy all helper modules to the shared helpers directory on the data volume."""
     dest = Path(HELPERS_PATH)
     dest.mkdir(parents=True, exist_ok=True)
-    shutil.copy(_HELPERS_SOURCE, dest / "duckbricks_utils.py")
+    for source_file in _HELPERS_DIR.glob("*.py"):
+        if source_file.name != "__init__.py":
+            shutil.copy(source_file, dest / source_file.name)
 
 
 def startup():

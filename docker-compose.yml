@@ -33,7 +33,8 @@ services:
     image: python:3.12-slim
     command: >
       sh -c "pip install --no-cache-dir marimo duckdb uv &&
-             marimo edit --sandbox --token-password=$$MARIMO_TOKEN_PASSWORD --host 0.0.0.0 --port 2718"
+             until [ -f /data/.duckbricks/start_marimo.py ]; do echo 'Waiting for DuckBricks helpers...'; sleep 2; done &&
+             python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718"
     working_dir: /data/workspace
     volumes:
       - duckbricks-data:/data
@@ -41,7 +42,6 @@ services:
       - .env
     environment:
       PYTHONPATH: /data/.duckbricks
-      MARIMO_TOKEN_PASSWORD: ${MARIMO_TOKEN_PASSWORD:-duckbricks}
     ports:
       - "2718:2718"
     restart: unless-stopped

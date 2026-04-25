@@ -7,6 +7,9 @@ services:
       - duckbricks-data:/data
     env_file:
       - .env
+    environment:
+      MARIMO_URL: /marimo
+      MARIMO_INTERNAL_URL: http://marimo:2718
     restart: unless-stopped
     depends_on:
       postgres:
@@ -34,7 +37,7 @@ services:
     command: >
       sh -c "pip install --no-cache-dir marimo duckdb uv &&
              until [ -f /data/.duckbricks/start_marimo.py ]; do echo 'Waiting for DuckBricks helpers...'; sleep 2; done &&
-             python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718"
+             python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718 --base-url /marimo"
     working_dir: /data/workspace
     volumes:
       - duckbricks-data:/data
@@ -42,8 +45,6 @@ services:
       - .env
     environment:
       PYTHONPATH: /data/.duckbricks
-    ports:
-      - "2718:2718"
     restart: unless-stopped
 
 volumes:

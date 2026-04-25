@@ -57,6 +57,51 @@ _DRAG_DROP_JS = """
 .ws-editor .cm-editor { height: 100% !important; }
 .ws-editor .cm-scroller { overflow: auto !important; }
 .ws-row-drop-target { outline: 2px dashed #1976d2 !important; background: #e3f2fd !important; }
+
+/* File tree panel: normal vs marimo-mode */
+.ws-file-tree-icon-strip {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 4px;
+    gap: 12px;
+}
+.ws-file-tree-body {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+body.ws-marimo-mode .ws-file-tree-panel {
+    width: 48px !important;
+    min-width: 48px !important;
+    overflow: visible !important;
+    padding: 4px !important;
+    position: relative !important;
+}
+body.ws-marimo-mode .ws-file-tree-body { display: none !important; }
+body.ws-marimo-mode .ws-file-tree-icon-strip { display: flex !important; }
+body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
+    display: flex !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 280px;
+    height: 100%;
+    background: #f5f5f5;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.2);
+    z-index: 500;
+    overflow-y: auto;
+    padding: 8px;
+    flex-direction: column;
+}
+
+/* Editor vs iframe toggling */
+body.ws-marimo-mode .ws-codemirror-panel { display: none !important; }
+body.ws-marimo-mode .ws-marimo-iframe { display: flex !important; }
+body.ws-marimo-mode .ws-save-btn { display: none !important; }
+body.ws-marimo-mode .ws-edit-source-btn { display: inline-flex !important; }
+.ws-marimo-iframe { display: none; border: none; width: 100%; flex: 1; min-height: 0; }
+.ws-edit-source-btn { display: none !important; }
 </style>
 <script>
 document.addEventListener("dragover", function(e) {
@@ -79,22 +124,28 @@ def workspace_page() -> None:
 def _render_file_tree_panel() -> None:
     with (
         ui.column()
-        .classes("bg-grey-1 border-right q-pa-sm gap-1")
-        .style("width: 280px; min-width: 280px; overflow-y: auto; height: 100%")
+        .classes("bg-grey-1 border-right ws-file-tree-panel")
+        .style("width: 280px; min-width: 280px; overflow-y: auto; height: 100%; position: relative")
     ):
-        with ui.row().classes("w-full items-center justify-between q-mb-sm"):
-            ui.label("Workspace").classes("text-weight-bold text-body2")
-            with ui.row().classes("gap-1"):
-                ui.button(icon="create_new_folder", on_click=_open_new_folder_dialog).props(
-                    "flat dense size=sm color=amber-7"
-                ).tooltip("New folder")
-                ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
-                    "flat dense size=sm"
-                ).tooltip("New file")
+        with ui.element("div").classes("ws-file-tree-icon-strip"):
+            ui.icon("folder_open", color="grey-7").classes("text-xl").tooltip("Workspace")
 
-        tree_container = ui.column().classes("w-full gap-0")
-        _refresh_tree(tree_container)
-        ui.context.client.on_connect(lambda: _refresh_tree(tree_container))
+        with ui.element("div").classes("ws-file-tree-body q-pa-sm gap-1").style(
+            "display: flex; flex-direction: column"
+        ):
+            with ui.row().classes("w-full items-center justify-between q-mb-sm"):
+                ui.label("Workspace").classes("text-weight-bold text-body2")
+                with ui.row().classes("gap-1"):
+                    ui.button(icon="create_new_folder", on_click=_open_new_folder_dialog).props(
+                        "flat dense size=sm color=amber-7"
+                    ).tooltip("New folder")
+                    ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
+                        "flat dense size=sm"
+                    ).tooltip("New file")
+
+            tree_container = ui.column().classes("w-full gap-0")
+            _refresh_tree(tree_container)
+            ui.context.client.on_connect(lambda: _refresh_tree(tree_container))
 
 
 def _refresh_tree(container: ui.column) -> None:
@@ -196,25 +247,38 @@ def _on_drop(dest_path: str, tree_container: ui.column, is_dir: bool) -> None:
 def _render_editor_panel() -> None:
     with (
         ui.column()
-        .classes("flex-1 q-pa-md gap-2 ws-editor")
+        .classes("flex-1 gap-2 ws-editor")
         .style("overflow: hidden; height: 100%; display: flex; flex-direction: column")
     ):
-        with ui.row().classes("w-full items-center justify-between").style("flex-shrink: 0"):
+        with ui.row().classes("q-px-md q-pt-md w-full items-center justify-between").style(
+            "flex-shrink: 0"
+        ):
             current_file_label = ui.label("— no file open —").classes("text-caption text-grey-5")
             with ui.row().classes("gap-2"):
                 ui.button("Save", icon="save", on_click=_save_current_file).props(
                     "flat color=primary"
-                ).tooltip("Save file")
+                ).classes("ws-save-btn").tooltip("Save file")
+                ui.button(
+                    "Edit source", icon="edit", on_click=_deactivate_marimo_mode
+                ).props("flat color=grey-7").classes("ws-edit-source-btn").tooltip(
+                    "Back to code editor"
+                )
 
-        editor = (
-            ui.codemirror(
-                value="",
-                language=None,
-                theme="githubLight",
+        with ui.element("div").classes("ws-codemirror-panel").style(
+            "flex: 1; min-height: 0; overflow: visible; display: flex;"
+            " flex-direction: column; padding: 0 16px 16px"
+        ):
+            editor = (
+                ui.codemirror(
+                    value="",
+                    language=None,
+                    theme="githubLight",
+                )
+                .classes("w-full")
+                .style("flex: 1; min-height: 0; overflow: visible")
             )
-            .classes("w-full")
-            .style("flex: 1; min-height: 0; overflow: visible")
-        )
+
+        ui.element("iframe").classes("ws-marimo-iframe").style("padding: 0 16px 16px")
 
         ui.context.client.storage["_ws_current_path"] = ""
         ui.context.client.storage["_ws_editor"] = editor
@@ -222,6 +286,62 @@ def _render_editor_panel() -> None:
         ui.context.client.storage["_ws_label"] = current_file_label
         ui.context.client.storage["_ws_lang"] = None
         ui.context.client.storage["_ws_drag_source"] = ""
+
+
+def _activate_marimo_mode(relative_path: str) -> None:
+    marimo_file_url = f"{MARIMO_URL}/?file={urllib.parse.quote(relative_path)}"
+    storage = ui.context.client.storage
+    storage["_ws_current_path"] = relative_path
+
+    label: ui.label = storage.get("_ws_label")
+    if label:
+        label.set_text(relative_path)
+
+    drawer = storage.get("_ws_nav_drawer")
+    if drawer:
+        drawer.props(add="mini mini-to-overlay")
+
+    ui.run_javascript(
+        "document.body.classList.add('ws-marimo-mode');"
+        f"var iframe = document.querySelector('.ws-marimo-iframe');"
+        f"if (iframe) iframe.src = '{marimo_file_url}';"
+    )
+
+
+def _deactivate_marimo_mode() -> None:
+    storage = ui.context.client.storage
+
+    drawer = storage.get("_ws_nav_drawer")
+    if drawer:
+        drawer.props(remove="mini mini-to-overlay")
+
+    ui.run_javascript(
+        "document.body.classList.remove('ws-marimo-mode');"
+        "var iframe = document.querySelector('.ws-marimo-iframe');"
+        "if (iframe) iframe.src = '';"
+    )
+
+    relative_path: str = storage.get("_ws_current_path", "")
+    if not relative_path:
+        return
+
+    extension = Path(relative_path).suffix.lower()
+    language = _CODEMIRROR_LANGUAGE_BY_EXTENSION.get(extension)
+    try:
+        content = _workspace_service.read_file(relative_path)
+    except FileNotFoundError:
+        return
+
+    editor: ui.codemirror = storage.get("_ws_editor")
+    label: ui.label = storage.get("_ws_label")
+
+    if editor:
+        editor.set_language(language)
+        editor.set_value(content)
+        editor.update()
+
+    if label:
+        label.set_text(relative_path)
 
 
 def _open_file_in_editor(relative_path: str) -> None:
@@ -232,12 +352,17 @@ def _open_file_in_editor(relative_path: str) -> None:
         return
 
     extension = Path(relative_path).suffix.lower()
-    language = _CODEMIRROR_LANGUAGE_BY_EXTENSION.get(extension)
 
-    if extension == ".py" and "import marimo" not in content:
-        content = _MARIMO_NOTEBOOK_TEMPLATE + content
-        _workspace_service.write_file(relative_path, content)
-        ui.notification("Marimo header added automatically.", type="info")
+    if extension == ".py":
+        if "import marimo" not in content:
+            content = _MARIMO_NOTEBOOK_TEMPLATE + content
+            _workspace_service.write_file(relative_path, content)
+            ui.notification("Marimo header added automatically.", type="info")
+        _activate_marimo_mode(relative_path)
+        return
+
+    _deactivate_marimo_mode()
+    language = _CODEMIRROR_LANGUAGE_BY_EXTENSION.get(extension)
 
     storage = ui.context.client.storage
     storage["_ws_current_path"] = relative_path

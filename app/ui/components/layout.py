@@ -13,37 +13,30 @@ def layout_frame(title: str = "DuckBricks") -> None:
         ui.space()
         ui.label(f"v{VERSION}").classes("text-caption q-mr-md")
 
-    with ui.left_drawer(value=True, bordered=True).classes("bg-grey-1 p-0 pl-4 pt-4") as drawer:
+    with ui.left_drawer(value=True, bordered=True).classes("bg-grey-1 p-0") as drawer:
         drawer.props("width=200")
-        with ui.column().classes("gap-1 q-pt-md q-px-sm p-0"):
-            with (
-                ui.row()
-                .classes("items-center gap-2 q-pl-xs cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/explorer"))
-            ):
-                ui.icon("storage").classes("text-grey-7")
-                ui.label("Metastore Explorer").classes("text-grey-9 text-body2")
+        ui.context.client.storage["_ws_nav_drawer"] = drawer
+        with ui.list().props("padding").classes("q-pt-sm"):
+            with ui.item(on_click=lambda: ui.navigate.to("/explorer")).props("clickable v-ripple"):
+                with ui.item_section().props("avatar"):
+                    ui.icon("storage").classes("text-grey-7")
+                with ui.item_section():
+                    ui.label("Metastore Explorer").classes("text-grey-9 text-body2")
 
-            with (
-                ui.row()
-                .classes("items-center gap-2 q-pl-xs cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/query"))
-            ):
-                ui.icon("code").classes("text-grey-7")
-                ui.label("Query Editor").classes("text-grey-9 text-body2")
+            with ui.item(on_click=lambda: ui.navigate.to("/query")).props("clickable v-ripple"):
+                with ui.item_section().props("avatar"):
+                    ui.icon("code").classes("text-grey-7")
+                with ui.item_section():
+                    ui.label("Query Editor").classes("text-grey-9 text-body2")
 
-            with (
-                ui.row()
-                .classes("items-center gap-2 q-pl-xs cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/jobs"))
-            ):
-                ui.icon("schedule").classes("text-grey-7")
-                ui.label("Jobs").classes("text-grey-9 text-body2")
+            with ui.item(on_click=lambda: ui.navigate.to("/jobs")).props("clickable v-ripple"):
+                with ui.item_section().props("avatar"):
+                    ui.icon("schedule").classes("text-grey-7")
+                with ui.item_section():
+                    ui.label("Jobs").classes("text-grey-9 text-body2")
 
-            with (
-                ui.row()
-                .classes("items-center gap-2 q-pl-xs cursor-pointer")
-                .on("click", lambda: ui.navigate.to("/workspace"))
-            ):
-                ui.icon("folder_open").classes("text-grey-7")
-                ui.label("Workspace").classes("text-grey-9 text-body2")
+            with ui.item(on_click=lambda: ui.navigate.to("/workspace")).props("clickable v-ripple"):
+                with ui.item_section().props("avatar"):
+                    ui.icon("folder_open").classes("text-grey-7")
+                with ui.item_section():
+                    ui.label("Workspace").classes("text-grey-9 text-body2")

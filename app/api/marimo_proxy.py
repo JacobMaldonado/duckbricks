@@ -30,8 +30,9 @@ def strip_hop_by_hop(headers: dict) -> dict:
 async def proxy_http_request(path: str, request: Request) -> Response:
     """Forward an HTTP request to the internal Marimo service."""
     target_url = f"{MARIMO_INTERNAL_URL}/marimo/{path}"
-    if request.query_string:
-        target_url = f"{target_url}?{request.query_string.decode()}"
+    query_string = request.url.query
+    if query_string:
+        target_url = f"{target_url}?{query_string}"
 
     forwarded_headers = strip_hop_by_hop(dict(request.headers))
     forwarded_headers.pop("host", None)

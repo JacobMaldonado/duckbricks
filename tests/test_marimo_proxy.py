@@ -1,7 +1,5 @@
 """Tests for the Marimo reverse-proxy routes."""
 
-import pytest
-
 
 class TestStripHopByHopHeaders:
     def test_removes_connection_header(self):
@@ -66,6 +64,32 @@ class TestResponseHeaderFiltering:
         from app.api.marimo_proxy import _HEADERS_DROPPED_FROM_RESPONSE
 
         assert "content-length" in _HEADERS_DROPPED_FROM_RESPONSE
+
+
+class TestProxyWebsocketFunctions:
+    def test_forward_functions_are_module_level(self):
+        from app.api import marimo_proxy
+
+        assert callable(marimo_proxy._forward_client_to_backend)
+        assert callable(marimo_proxy._forward_backend_to_client)
+
+    def test_proxy_websocket_is_async(self):
+        import asyncio
+        from app.api.marimo_proxy import proxy_websocket
+
+        assert asyncio.iscoroutinefunction(proxy_websocket)
+
+    def test_forward_client_to_backend_is_async(self):
+        import asyncio
+        from app.api.marimo_proxy import _forward_client_to_backend
+
+        assert asyncio.iscoroutinefunction(_forward_client_to_backend)
+
+    def test_forward_backend_to_client_is_async(self):
+        import asyncio
+        from app.api.marimo_proxy import _forward_backend_to_client
+
+        assert asyncio.iscoroutinefunction(_forward_backend_to_client)
 
 
 class TestMarimoProxyConfig:

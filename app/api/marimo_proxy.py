@@ -22,6 +22,9 @@ _HOP_BY_HOP_HEADERS = frozenset(
     ]
 )
 
+_HEADERS_DROPPED_FROM_REQUEST = frozenset(["host", "accept-encoding"])
+_HEADERS_DROPPED_FROM_RESPONSE = frozenset(["content-encoding", "content-length"])
+
 
 def strip_hop_by_hop(headers: dict) -> dict:
     return {k: v for k, v in headers.items() if k.lower() not in _HOP_BY_HOP_HEADERS}
@@ -35,7 +38,8 @@ async def proxy_http_request(path: str, request: Request) -> Response:
         target_url = f"{target_url}?{query_string}"
 
     forwarded_headers = strip_hop_by_hop(dict(request.headers))
-    forwarded_headers.pop("host", None)
+    for header in _HEADERS_DROPPED_FROM_REQUEST:
+        forwarded_headers.pop(header, None)
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30) as client:
         body = await request.body()
@@ -47,6 +51,9 @@ async def proxy_http_request(path: str, request: Request) -> Response:
         )
 
     response_headers = strip_hop_by_hop(dict(backend_response.headers))
+    for header in _HEADERS_DROPPED_FROM_RESPONSE:
+        response_headers.pop(header, None)
+
     return Response(
         content=backend_response.content,
         status_code=backend_response.status_code,
@@ -54,11 +61,11 @@ async def proxy_http_request(path: str, request: Request) -> Response:
     )
 
 
-async def proxy_websocket(client_ws: WebSocket) -> None:
+async def proxy_websocket(client_ws: WebSocket, path: str = "ws") -> None:
     """Bidirectionally bridge a WebSocket connection to the internal Marimo service."""
     await client_ws.accept()
     query_string = client_ws.scope.get("query_string", b"").decode()
-    backend_uri = f"{MARIMO_INTERNAL_URL.replace('http', 'ws', 1)}/marimo/ws"
+    backend_uri = f"{MARIMO_INTERNAL_URL.replace('http', 'ws', 1)}/marimo/{path}"
     if query_string:
         backend_uri = f"{backend_uri}?{query_string}"
 
@@ -70,7 +77,7 @@ async def proxy_websocket(client_ws: WebSocket) -> None:
                     while True:
                         message = await client_ws.receive()
                         if message["type"] == "websocket.disconnect":
-                            break
+                            return
                         if "bytes" in message and message["bytes"] is not None:
                             await backend_ws.send(message["bytes"])
                         elif "text" in message and message["text"] is not None:
@@ -88,7 +95,12 @@ async def proxy_websocket(client_ws: WebSocket) -> None:
                 except (WebSocketDisconnect, Exception):
                     pass
 
-            await asyncio.gather(forward_to_backend(), forward_to_client())
+            tasks = await asyncio.gather(
+                forward_to_backend(),
+                forward_to_client(),
+                return_exceptions=True,
+            )
+            _ = tasks
     except Exception:
         pass
     finally:

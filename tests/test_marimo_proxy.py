@@ -44,6 +44,30 @@ class TestStripHopByHopHeaders:
         assert result == {}
 
 
+class TestRequestHeaderFiltering:
+    def test_accept_encoding_is_dropped(self):
+        from app.api.marimo_proxy import _HEADERS_DROPPED_FROM_REQUEST
+
+        assert "accept-encoding" in _HEADERS_DROPPED_FROM_REQUEST
+
+    def test_host_is_dropped(self):
+        from app.api.marimo_proxy import _HEADERS_DROPPED_FROM_REQUEST
+
+        assert "host" in _HEADERS_DROPPED_FROM_REQUEST
+
+
+class TestResponseHeaderFiltering:
+    def test_content_encoding_is_dropped(self):
+        from app.api.marimo_proxy import _HEADERS_DROPPED_FROM_RESPONSE
+
+        assert "content-encoding" in _HEADERS_DROPPED_FROM_RESPONSE
+
+    def test_content_length_is_dropped(self):
+        from app.api.marimo_proxy import _HEADERS_DROPPED_FROM_RESPONSE
+
+        assert "content-length" in _HEADERS_DROPPED_FROM_RESPONSE
+
+
 class TestMarimoProxyConfig:
     def test_marimo_internal_url_is_configurable(self, monkeypatch):
         monkeypatch.setenv("MARIMO_INTERNAL_URL", "http://custom-host:9999")

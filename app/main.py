@@ -60,10 +60,10 @@ async def marimo_http_proxy(path: str, request: Request):
     return await proxy_http_request(path, request)
 
 
-@app.websocket("/marimo/ws")
-async def marimo_ws_proxy(client_ws: WebSocket) -> None:
+@app.websocket("/marimo/{path:path}")
+async def marimo_ws_proxy(path: str, client_ws: WebSocket) -> None:
     """Reverse-proxy WebSocket connections to the internal Marimo service."""
-    await proxy_websocket(client_ws)
+    await proxy_websocket(client_ws, path)
 
 
 @app.get("/api/completion/schema")

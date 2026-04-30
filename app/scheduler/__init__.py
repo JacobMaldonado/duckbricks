@@ -1,1 +1,5 @@
-"""Prefect scheduler — Phase 3 placeholder."""
+"""Prefect scheduler — singleton for use across the application."""
+
+from app.services.jobs.scheduler import PrefectJobScheduler
+
+prefect_scheduler = PrefectJobScheduler()

@@ -94,7 +94,11 @@ def _render_job_row(job: Job, jobs_container: ui.column) -> None:
             with ui.row().classes("items-center gap-2"):
                 status_icon = "check_circle" if job.is_enabled else "pause_circle"
                 status_color = "green" if job.is_enabled else "grey"
-                ui.icon(status_icon).classes(f"text-{status_color}")
+                status_tooltip = "Disable schedule" if job.is_enabled else "Enable schedule"
+                ui.button(
+                    icon=status_icon,
+                    on_click=lambda j=job, c=jobs_container: _toggle_job_enabled(j, c),
+                ).props(f"flat dense color={status_color}").tooltip(status_tooltip)
 
                 ui.button(
                     icon="play_arrow",
@@ -111,6 +115,14 @@ def _render_job_row(job: Job, jobs_container: ui.column) -> None:
                     icon="delete",
                     on_click=lambda j=job, c=jobs_container: _confirm_delete_job(j, c),
                 ).props("flat dense color=negative").tooltip("Delete job")
+
+
+def _toggle_job_enabled(job: Job, jobs_container: ui.column) -> None:
+    updated = _job_service.toggle_enabled(job.id)
+    if updated:
+        state = "enabled" if updated.is_enabled else "disabled"
+        ui.notification(f"Job '{updated.name}' {state}.", type="positive")
+    _render_jobs_list(jobs_container)
 
 
 def _run_job_now(job: Job, jobs_container: ui.column) -> None:

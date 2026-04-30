@@ -9,6 +9,7 @@ from nicegui import app, ui
 
 from app.api.marimo_proxy import proxy_http_request, proxy_websocket
 from app.config import HELPERS_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
+from app.scheduler import prefect_scheduler
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
@@ -48,6 +49,11 @@ def startup():
         init_database()
     except Exception as e:
         print(f"Warning: Could not initialize database: {e}")
+    try:
+        prefect_scheduler.start()
+        prefect_scheduler.sync_from_database()
+    except Exception as e:
+        print(f"Warning: Could not start job scheduler: {e}")
 
 
 app.on_startup(startup)

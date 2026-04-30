@@ -10,9 +10,12 @@ services:
     environment:
       MARIMO_URL: /marimo
       MARIMO_INTERNAL_URL: http://marimo:2718
+      PREFECT_API_URL: http://prefect-server:4200/api
     restart: unless-stopped
     depends_on:
       postgres:
+        condition: service_healthy
+      prefect-server:
         condition: service_healthy
 
   postgres:
@@ -32,10 +35,30 @@ services:
       retries: 5
     restart: unless-stopped
 
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    environment:
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: "postgresql+asyncpg://duckbricks:duckbricks@postgres/prefect"
+    volumes:
+      - prefect-data:/root/.prefect
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4200/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
   marimo:
     image: python:3.12-slim
     command: >
-      sh -c "pip install --no-cache-dir marimo duckdb uv &&
+      sh -c "pip install --no-cache-dir marimo duckdb uv sqlglot &&
              until [ -f /data/.duckbricks/start_marimo.py ]; do echo 'Waiting for DuckBricks helpers...'; sleep 2; done &&
              python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718 --base-url /marimo"
     working_dir: /data/workspace
@@ -50,3 +73,4 @@ services:
 volumes:
   duckbricks-data:
   postgres-data:
+  prefect-data:

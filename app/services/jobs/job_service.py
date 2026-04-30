@@ -11,6 +11,16 @@ from app.services.database.session import get_session
 from app.services.jobs.executors import ExecutorRegistry
 
 
+def _sync_scheduler_on_job(job: Job) -> None:
+    """Notify the scheduler about a job's current state after any CUD operation."""
+    from app.scheduler import prefect_scheduler
+
+    if job.is_enabled and job.schedule_cron:
+        prefect_scheduler.schedule_job(job.id, job.schedule_cron)
+    else:
+        prefect_scheduler.unschedule_job(job.id)
+
+
 class JobService:
     """Provides create/read/update/delete and run operations for DuckBricks jobs."""
 
@@ -20,7 +30,9 @@ class JobService:
             session.add(job)
             session.flush()
             session.refresh(job)
-            return self._detach(job, session)
+            detached = self._detach(job, session)
+        _sync_scheduler_on_job(detached)
+        return detached
 
     def list_jobs(self) -> list[Job]:
         with get_session() as session:
@@ -49,7 +61,9 @@ class JobService:
                 setattr(job, key, value)
             session.flush()
             session.refresh(job)
-            return self._detach(job, session)
+            detached = self._detach(job, session)
+        _sync_scheduler_on_job(detached)
+        return detached
 
     def delete_job(self, job_id: int) -> bool:
         with get_session() as session:
@@ -57,7 +71,23 @@ class JobService:
             if not job:
                 return False
             session.delete(job)
-            return True
+        from app.scheduler import prefect_scheduler
+
+        prefect_scheduler.unschedule_job(job_id)
+        return True
+
+    def toggle_enabled(self, job_id: int) -> Job | None:
+        """Toggle the is_enabled flag on a job and sync the scheduler accordingly."""
+        with get_session() as session:
+            job = session.query(Job).filter(Job.id == job_id).first()
+            if not job:
+                return None
+            job.is_enabled = not job.is_enabled
+            session.flush()
+            session.refresh(job)
+            detached = self._detach(job, session)
+        _sync_scheduler_on_job(detached)
+        return detached
 
     def add_task(
         self, job_id: int, name: str, executor_type: str, content: str, position: int = 0

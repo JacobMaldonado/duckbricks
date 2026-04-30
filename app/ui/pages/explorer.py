@@ -1,5 +1,7 @@
 """Metastore Explorer page."""
 
+import traceback
+
 from nicegui import ui
 
 from app.services.metastore import manager
@@ -21,6 +23,7 @@ def _render_init_prompt() -> None:
             ui.navigate.to("/explorer")
         except Exception as e:
             status_label.set_text(f"❌ Error: {e}")
+            traceback.print_exc()
 
     init_button.on_click(do_init)
 

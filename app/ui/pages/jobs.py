@@ -1,23 +1,32 @@
 """Jobs page — create, manage, and monitor scheduled DuckBricks jobs."""
 
 from pathlib import Path
+from uuid import UUID
 
 from nicegui import ui
+from prefect.client.schemas.objects import FlowRun
 from sqlalchemy.exc import OperationalError
 
-from app.config import WORKSPACE_PATH
+from app.config import PREFECT_UI_BASE_PATH, WORKSPACE_PATH
 from app.services.database.connection import DatabaseConnection
 from app.services.database.models.app import Job
 from app.services.jobs import JobService
+from app.services.prefect import prefect_client
 from app.ui.components.layout import layout_frame
 
 _job_service = JobService()
 
-
-def _format_status_badge(status: str) -> str:
-    color_map = {"success": "green", "failed": "red", "running": "blue", "cancelled": "grey"}
-    color = color_map.get(status, "grey")
-    return f'<span class="q-badge bg-{color} text-white q-pa-xs rounded">{status}</span>'
+_STATE_COLORS: dict[str, str] = {
+    "COMPLETED": "green",
+    "FAILED": "red",
+    "CRASHED": "red",
+    "RUNNING": "blue",
+    "SCHEDULED": "orange",
+    "PENDING": "orange",
+    "CANCELLED": "grey",
+    "CANCELLING": "grey",
+    "PAUSED": "grey",
+}
 
 
 def _list_workspace_files(extensions: list[str]) -> list[str]:
@@ -104,9 +113,14 @@ def _render_job_row(job: Job, jobs_container: ui.column) -> None:
                     icon="play_arrow",
                     on_click=lambda j=job, c=jobs_container: _run_job_now(j, c),
                 ).props("flat dense color=primary").tooltip("Run now")
-                ui.button(icon="history", on_click=lambda j=job: _open_run_history(j)).props(
-                    "flat dense color=grey"
-                ).tooltip("View run history")
+                ui.button(
+                    icon="history",
+                    on_click=lambda j=job: _open_run_history(j),
+                ).props("flat dense color=grey").tooltip("View run history")
+                ui.button(
+                    icon="open_in_new",
+                    on_click=lambda j=job: _open_deployment_details(j),
+                ).props("flat dense color=grey").tooltip("Deployment details in Prefect")
                 ui.button(
                     icon="edit",
                     on_click=lambda j=job, c=jobs_container: _open_job_dialog(j, c),
@@ -126,76 +140,105 @@ def _toggle_job_enabled(job: Job, jobs_container: ui.column) -> None:
 
 
 def _run_job_now(job: Job, jobs_container: ui.column) -> None:
-    notification = ui.notification(f"Running job '{job.name}'...", type="ongoing", timeout=None)
+    notification = ui.notification(f"Triggering job '{job.name}'...", type="ongoing", timeout=None)
     try:
-        execution = _job_service.run_job(job.id)
+        flow_run = _job_service.run_job(job.id)
         notification.dismiss()
-        ui.navigate.to(f"/jobs/execution/{execution.id}")
-    except Exception as e:
+        run_path = prefect_client.run_ui_path(flow_run.id)
+        ui.notification(
+            f"Job '{job.name}' triggered. Run ID: {flow_run.name}",
+            type="positive",
+        )
+        _open_prefect_iframe_dialog(f"Run — {job.name}", run_path)
+    except Exception as exc:
         notification.dismiss()
-        ui.notification(f"Job '{job.name}' failed: {e}", type="negative")
+        ui.notification(f"Could not trigger '{job.name}': {exc}", type="negative")
         _render_jobs_list(jobs_container)
 
 
 def _confirm_delete_job(job: Job, jobs_container: ui.column) -> None:
     with ui.dialog() as dialog, ui.card():
         ui.label(f"Delete job '{job.name}'?").classes("text-weight-bold")
-        ui.label("This will also delete all run history.").classes("text-grey-7")
+        ui.label("This will also delete the Prefect deployment and all run history.").classes(
+            "text-grey-7"
+        )
         with ui.row().classes("justify-end gap-2 q-mt-md"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
+
+            def _confirm_delete() -> None:
+                _job_service.delete_job(job.id)
+                dialog.close()
+                if jobs_container:
+                    _render_jobs_list(jobs_container)
+
             ui.button(
                 "Delete",
-                on_click=lambda: [
-                    _job_service.delete_job(job.id),
-                    dialog.close(),
-                    _render_jobs_list(jobs_container),
-                ],
+                on_click=_confirm_delete,
             ).props("color=negative")
     dialog.open()
 
 
+def _open_deployment_details(job: Job) -> None:
+    if not job.prefect_deployment_id:
+        ui.notification("No Prefect deployment registered for this job.", type="warning")
+        return
+    deployment_path = prefect_client.deployment_ui_path(UUID(job.prefect_deployment_id))
+    _open_prefect_iframe_dialog(f"Deployment — {job.name}", deployment_path)
+
+
 def _open_run_history(job: Job) -> None:
-    executions = _job_service.list_executions(job.id)
-    with ui.dialog() as dialog, ui.card().classes("w-full").style("min-width: 600px"):
+    runs = _job_service.list_executions(job.id)
+    with ui.dialog() as dialog, ui.card().classes("w-full").style("min-width: 640px"):
         with ui.row().classes("w-full items-center justify-between q-mb-md"):
             ui.label(f"Run History — {job.name}").classes("text-h6")
             ui.button(icon="close", on_click=dialog.close).props("flat dense")
 
-        if not executions:
+        if not runs:
             ui.label("No runs yet.").classes("text-grey-6")
         else:
-            for ex in executions:
-                _render_execution_summary_row(ex, dialog)
+            for run in runs:
+                _render_flow_run_row(run, dialog)
     dialog.open()
 
 
-def _render_execution_summary_row(execution, dialog) -> None:
-    status_colors = {
-        "success": "green",
-        "failed": "red",
-        "running": "blue",
-        "cancelled": "grey",
-    }
-    color = status_colors.get(execution.status, "grey")
-    started = str(execution.started_at)[:19] if execution.started_at else "—"
-    duration = f"{execution.duration_ms} ms" if execution.duration_ms else "—"
+def _render_flow_run_row(run: FlowRun, parent_dialog: ui.dialog) -> None:
+    state_name = run.state_name or "UNKNOWN"
+    color = _STATE_COLORS.get(state_name.upper(), "grey")
+    started = str(run.start_time)[:19] if run.start_time else "—"
+    duration = f"{int(run.total_run_time.total_seconds())}s" if run.total_run_time else "—"
+    run_path = prefect_client.run_ui_path(run.id)
 
-    with (
-        ui.card()
-        .classes("w-full cursor-pointer hover:bg-grey-2")
-        .on(
-            "click",
-            lambda ex=execution: [dialog.close(), ui.navigate.to(f"/jobs/execution/{ex.id}")],
-        )
-    ):
+    def _open_run(r_path: str = run_path) -> None:
+        parent_dialog.close()
+        _open_prefect_iframe_dialog(f"Run — {run.name}", r_path)
+
+    with ui.card().classes("w-full cursor-pointer hover:bg-grey-2").on("click", _open_run):
         with ui.row().classes("w-full items-center justify-between q-pa-sm"):
             with ui.row().classes("items-center gap-2"):
                 ui.icon("circle", color=color).classes("text-xs")
-                ui.label(f"Run #{execution.id}").classes("text-weight-medium")
-                ui.label(execution.status.upper()).classes(f"text-caption text-{color}")
+                ui.label(run.name or str(run.id)).classes("text-weight-medium")
+                ui.label(state_name.upper()).classes(f"text-caption text-{color}")
             with ui.row().classes("items-center gap-4"):
                 ui.label(started).classes("text-caption text-grey-6")
                 ui.label(duration).classes("text-caption text-grey-6")
+
+
+def _open_prefect_iframe_dialog(title: str, path: str) -> None:
+    """Open a full-screen dialog embedding the Prefect UI at the given path."""
+    prefect_url = f"{PREFECT_UI_BASE_PATH}/{path.lstrip('/')}"
+    with ui.dialog().props("maximized") as dialog, ui.card().classes("w-full h-full"):
+        with ui.row().classes("w-full items-center justify-between q-pa-sm"):
+            ui.label(title).classes("text-h6")
+            with ui.row().classes("items-center gap-2"):
+                ui.link("Open in new tab", prefect_url, new_tab=True).classes(
+                    "text-caption text-primary"
+                )
+                ui.button(icon="close", on_click=dialog.close).props("flat dense")
+        ui.html(
+            f'<iframe src="{prefect_url}" '
+            f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>'
+        )
+    dialog.open()
 
 
 def _open_job_dialog(job: Job | None, jobs_container: ui.column | None) -> None:
@@ -245,21 +288,20 @@ def _open_job_dialog(job: Job | None, jobs_container: ui.column | None) -> None:
         render_tasks()
 
         with ui.row().classes("q-mt-sm"):
-            ui.button(
-                "+ Add Task",
-                on_click=lambda: [
-                    tasks.append(
-                        {
-                            "name": "New Task",
-                            "executor_type": "sql",
-                            "content": "",
-                            "file_path": None,
-                            "position": len(tasks),
-                        }
-                    ),
-                    render_tasks(),
-                ],
-            ).props("flat color=primary")
+
+            def _add_task() -> None:
+                tasks.append(
+                    {
+                        "name": "New Task",
+                        "executor_type": "sql",
+                        "content": "",
+                        "file_path": None,
+                        "position": len(tasks),
+                    }
+                )
+                render_tasks()
+
+            ui.button("+ Add Task", on_click=_add_task).props("flat color=primary")
 
         with ui.row().classes("justify-end gap-2 q-mt-lg"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
@@ -312,7 +354,7 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
         inline_editor = (
             ui.codemirror(
                 value=task_def.get("content", ""),
-                language=initial_lang,
+                language=initial_lang,  # type: ignore[arg-type]
                 theme="githubLight",
             )
             .classes("w-full")
@@ -337,7 +379,7 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
 
         def _apply_executor_language(executor: str) -> None:
             lang = "SQL" if executor == "sql" else "Python"
-            inline_editor.set_language(lang)
+            inline_editor.set_language(lang)  # type: ignore[arg-type]
             inline_editor.update()
 
         _apply_mode(mode_toggle.value)
@@ -370,19 +412,22 @@ def _save_job(
     cron = schedule_cron.strip() if schedule_cron.strip() else None
 
     if existing_job:
-        job = _job_service.update_job(
+        saved_job = _job_service.update_job(
             existing_job.id,
             name=name,
             description=description or None,
             schedule_cron=cron,
         )
-        _job_service.replace_tasks(job.id, tasks)
+        if not saved_job:
+            ui.notification("Failed to update job.", type="negative")
+            return
+        _job_service.replace_tasks(saved_job.id, tasks)
     else:
-        job = _job_service.create_job(name, description or None, cron)
-        _job_service.replace_tasks(job.id, tasks)
+        saved_job = _job_service.create_job(name, description or None, cron)
+        _job_service.replace_tasks(saved_job.id, tasks)
 
     dialog.close()
-    ui.notification(f"Job '{job.name}' saved.", type="positive")
+    ui.notification(f"Job '{saved_job.name}' saved.", type="positive")
     if jobs_container:
         _render_jobs_list(jobs_container)
 

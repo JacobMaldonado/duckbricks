@@ -166,9 +166,11 @@ def query_workspace():
                             .classes("w-full items-center q-pa-xs bg-grey-1 gap-2")
                             .style("flex-shrink: 0")
                         ):
-                            execute_btn = ui.button("Execute", icon="play_arrow").props(
-                                "color=primary dense"
-                            ).tooltip("Shift+Enter")
+                            execute_btn = (
+                                ui.button("Execute", icon="play_arrow")
+                                .props("color=primary dense")
+                                .tooltip("Shift+Enter")
+                            )
                             status_label = ui.label("").classes("text-caption text-grey")
 
                         editor = (

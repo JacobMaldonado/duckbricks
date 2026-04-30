@@ -56,13 +56,17 @@ class CatalogBrowser:
 
         initial_nodes = self._load_catalog_nodes()
         with self._tree_container:
-            self._tree = ui.tree(
-                initial_nodes,
-                node_key="id",
-                label_key="label",
-                on_select=self._handle_select,
-                on_expand=self._handle_expand,
-            ).classes("w-full").props("dense")
+            self._tree = (
+                ui.tree(
+                    initial_nodes,
+                    node_key="id",
+                    label_key="label",
+                    on_select=self._handle_select,
+                    on_expand=self._handle_expand,
+                )
+                .classes("w-full")
+                .props("dense")
+            )
 
         tree_id = self._tree.id
         slot_template = (
@@ -76,7 +80,8 @@ class CatalogBrowser:
                      ? props.tree.setExpanded(props.key, !props.expanded) : null">
                 <q-icon v-if="props.node.icon" :name="props.node.icon"
                         class="q-mr-xs text-grey-7 flex-shrink-0" size="14px"/>
-                <span class="col text-caption text-grey-9 ellipsis" style="min-width: 0">{{ props.node.label }}</span>
+                <span class="col text-caption text-grey-9 ellipsis"
+                      style="min-width: 0">{{ props.node.label }}</span>
               </div>
               <q-btn v-if="props.node.insertable" flat dense round
                      icon="keyboard_double_arrow_right"
@@ -273,8 +278,12 @@ class CatalogBrowser:
                                 lambda _, p=full_path: self._select_table(p),
                             )
                         ):
-                            ui.icon(icon).classes("text-grey-7 q-mr-xs flex-shrink-0").style("font-size: 14px")
-                            ui.label(match["name"]).classes("text-caption text-grey-9 col ellipsis").style("min-width: 0")
+                            ui.icon(icon).classes("text-grey-7 q-mr-xs flex-shrink-0").style(
+                                "font-size: 14px"
+                            )
+                            ui.label(match["name"]).classes(
+                                "text-caption text-grey-9 col ellipsis"
+                            ).style("min-width: 0")
                             if self._on_insert_to_editor:
                                 ui.button(
                                     icon="keyboard_double_arrow_right",

@@ -1,7 +1,7 @@
 # DuckBricks Architecture
 
-**Version:** 0.2.0  
-**Last Updated:** 2026-03-14  
+**Version:** 0.2.0
+**Last Updated:** 2026-03-14
 **Status:** Living Document
 
 ---
@@ -72,19 +72,19 @@ DuckBricks is a self-hosted data platform that provides Databricks-like function
 
 ### 1.3 Architectural Principles
 
-**1. Simplicity First**  
+**1. Simplicity First**
 Start with the simplest solution that works. Add complexity only when requirements demand it. The current v0.1.x implementation demonstrates this: a single NiceGUI application with in-process DuckDB.
 
-**2. Loose Coupling via Abstraction Layers**  
+**2. Loose Coupling via Abstraction Layers**
 Components communicate through well-defined interfaces, not concrete implementations. Storage, scheduling, and database backends must be swappable via dependency injection and adapter patterns.
 
-**3. Separation of Concerns**  
+**3. Separation of Concerns**
 - **Presentation Layer:** NiceGUI (UI components)
 - **API Layer:** FastAPI (REST endpoints for external integrations)
 - **Service Layer:** Business logic (metastore management, query execution, job orchestration)
 - **Data Layer:** DuckDB (query engine), PostgreSQL (metastore + app state), DuckLake (storage format)
 
-**4. Progressive Enhancement**  
+**4. Progressive Enhancement**
 The architecture supports incremental evolution:
 - **Phase 1 (Current):** NiceGUI + DuckDB + DuckLake (file-based catalog)
 - **Phase 2:** Add PostgreSQL metastore, FastAPI REST API
@@ -92,7 +92,7 @@ The architecture supports incremental evolution:
 - **Phase 4:** Multi-tenancy, workspaces, RBAC
 - **Phase 5:** Cloud storage backends (S3, Azure Blob, GCS)
 
-**5. Container-First Deployment**  
+**5. Container-First Deployment**
 All components are containerized and orchestrated via Docker Compose for local/single-node deployments. The architecture must support migration to Kubernetes for production scale-out.
 
 ### 1.4 Component Responsibilities
@@ -114,7 +114,7 @@ All components are containerized and orchestrated via Docker Compose for local/s
 
 ### 2.1 NiceGUI (Frontend)
 
-**Why NiceGUI?**  
+**Why NiceGUI?**
 NiceGUI is a Python-based UI framework that enables rapid development of web interfaces without JavaScript. It's ideal for data tools where Python developers can build full-stack applications without context switching.
 
 **Architecture Integration:**
@@ -135,7 +135,7 @@ NiceGUI is a Python-based UI framework that enables rapid development of web int
 
 ### 2.2 FastAPI (REST API)
 
-**Why FastAPI?**  
+**Why FastAPI?**
 FastAPI provides automatic OpenAPI documentation, data validation via Pydantic, and async support. It complements NiceGUI by exposing programmatic access to DuckBricks functionality.
 
 **When to Use FastAPI vs. NiceGUI:**
@@ -177,7 +177,7 @@ def list_catalogs():
 
 ### 2.3 DuckDB (Query Engine)
 
-**Why DuckDB?**  
+**Why DuckDB?**
 DuckDB is an in-process analytical database optimized for OLAP workloads. It natively supports reading Parquet files, enabling efficient querying of DuckLake tables without data movement.
 
 **Integration Architecture:**
@@ -205,7 +205,7 @@ DuckDB is an in-process analytical database optimized for OLAP workloads. It nat
 
 ### 2.4 DuckLake (Open Table Format)
 
-**Why DuckLake?**  
+**Why DuckLake?**
 DuckLake is an open table format built for DuckDB that provides ACID transactions, time travel, and schema evolution. It's similar to Apache Iceberg but optimized for DuckDB's architecture.
 
 **Storage Structure:**
@@ -257,7 +257,7 @@ SELECT * FROM users;
 
 ### 2.5 PostgreSQL (Metastore & Application Database)
 
-**Why PostgreSQL?**  
+**Why PostgreSQL?**
 PostgreSQL provides robust relational storage for application state and metastore metadata. Unlike DuckLake's file-based catalog, PostgreSQL enables:
 - Complex queries (e.g., "find all tables with a column named 'user_id'")
 - Transactional updates across multiple entities
@@ -283,7 +283,7 @@ PostgreSQL provides robust relational storage for application state and metastor
 
 ### 2.6 Prefect (Workflow Orchestration)
 
-**Why Prefect?**  
+**Why Prefect?**
 Prefect provides Pythonic workflow orchestration with a modern UI, dynamic DAGs, and rich failure handling. It's ideal for scheduled queries, ETL pipelines, and data quality checks.
 
 **Use Cases:**
@@ -706,7 +706,7 @@ def downgrade():
 
 **Pattern:** Repository Pattern + Dependency Injection
 
-**Why?**  
+**Why?**
 - Decouple business logic from PostgreSQL specifics
 - Enable swapping PostgreSQL for another database (e.g., MySQL, SQLite for testing)
 - Simplify testing with in-memory repositories
@@ -778,12 +778,12 @@ def list_catalogs(repo: MetastoreRepository = Depends(get_metastore_repo)):
 
 ## 5. Swappable Components (Critical)
 
-**Architectural Goal:**  
+**Architectural Goal:**
 Design for flexibility. Components that may change (storage backend, scheduler, database) must be swappable via configuration without code changes.
 
 ### 5.1 Database Backend Abstraction
 
-**Current:** PostgreSQL  
+**Current:** PostgreSQL
 **Future Options:** MySQL, CockroachDB, SQLite (for embedded deployments)
 
 **Strategy:** Repository Pattern + SQLAlchemy ORM
@@ -828,7 +828,7 @@ def get_metastore_repo() -> MetastoreRepository:
         raise ValueError(f"Unknown database backend: {DATABASE_BACKEND}")
 ```
 
-**SQLAlchemy Support:**  
+**SQLAlchemy Support:**
 SQLAlchemy abstracts most SQL dialects, so switching databases is primarily a connection string change:
 ```bash
 # PostgreSQL
@@ -843,7 +843,7 @@ DATABASE_URL=sqlite:///data/duckbricks.db
 
 ### 5.2 Task Scheduler Abstraction
 
-**Current:** Prefect  
+**Current:** Prefect
 **Future Options:** Airflow, Dagster, custom scheduler
 
 **Strategy:** Workflow Interface + Adapter Pattern
@@ -907,7 +907,7 @@ WORKFLOW_SCHEDULER=prefect  # or airflow, dagster, custom
 
 ### 5.3 File Storage Abstraction
 
-**Current:** Local filesystem  
+**Current:** Local filesystem
 **Future Options:** MinIO, S3, Azure Blob, GCS
 
 **Strategy:** Storage Interface + Adapter Pattern
@@ -1001,7 +1001,7 @@ def get_storage_backend() -> StorageBackend:
 
 ### 5.4 Dependency Injection Strategy
 
-**Why Dependency Injection?**  
+**Why Dependency Injection?**
 - Loose coupling: Services depend on interfaces, not concrete implementations
 - Testability: Inject mock repositories in tests
 - Configuration-driven: Swap implementations via config without code changes
@@ -1346,24 +1346,24 @@ from typing import Optional
 class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite:///data/duckbricks.db"
-    
+
     # DuckLake
     ducklake_catalog_path: str = "/data/metastore.ducklake"
     ducklake_data_path: str = "/data/parquet/"
-    
+
     # Storage
     storage_backend: str = "local"  # local | minio | s3 | azure | gcs
     s3_bucket: Optional[str] = None
     s3_endpoint_url: Optional[str] = None
-    
+
     # Scheduler
     workflow_scheduler: str = "prefect"  # prefect | airflow | dagster
     prefect_api_url: Optional[str] = None
-    
+
     # Application
     secret_key: str = "changeme-in-production"
     allowed_origins: list[str] = ["http://localhost:8080"]
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
@@ -1527,7 +1527,7 @@ def execute_query(sql: str):
 
 ### 9.4 Migration to Kubernetes
 
-**Current:** Docker Compose (single-node)  
+**Current:** Docker Compose (single-node)
 **Future:** Kubernetes (multi-node, HA)
 
 **Benefits of Kubernetes:**
@@ -1603,13 +1603,13 @@ spec:
 
 ### ADR-001: Use NiceGUI for Frontend
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-03-01
 
-**Context:**  
+**Context:**
 Need a web UI framework for the DuckBricks platform. Options: React/Vue (JavaScript), Streamlit, Dash, NiceGUI.
 
-**Decision:**  
+**Decision:**
 Use NiceGUI for the frontend.
 
 **Rationale:**
@@ -1627,13 +1627,13 @@ Use NiceGUI for the frontend.
 
 ### ADR-002: Use PostgreSQL as Metastore Backend
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-03-05
 
-**Context:**  
+**Context:**
 DuckLake's `.ducklake` catalog is file-based. Need a richer queryable metastore for workspace isolation, access control, and audit logging.
 
-**Decision:**  
+**Decision:**
 Mirror DuckLake metadata in PostgreSQL.
 
 **Rationale:**
@@ -1651,13 +1651,13 @@ Mirror DuckLake metadata in PostgreSQL.
 
 ### ADR-003: Use Prefect for Workflow Orchestration
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-03-08
 
-**Context:**  
+**Context:**
 Need a workflow orchestration tool for scheduled queries, ETL pipelines, and data quality checks. Options: Prefect, Airflow, Dagster.
 
-**Decision:**  
+**Decision:**
 Use Prefect for workflow orchestration.
 
 **Rationale:**

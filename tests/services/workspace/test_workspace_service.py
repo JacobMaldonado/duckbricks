@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services.workspace.workspace_service import WorkspaceNode, WorkspaceService
+from app.services.workspace.workspace_service import WorkspaceService
 
 
 @pytest.fixture

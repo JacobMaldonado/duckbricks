@@ -23,7 +23,7 @@ def patch_http_request_user_serialization() -> None:
     def safe_from_request(request):  # type: ignore[no-untyped-def]
         http_request = original(request)
         user = http_request.user
-        if not isinstance(user, (dict, str, int, float, bool, list, type(None))):
+        if not isinstance(user, dict | str | int | float | bool | list | type(None)):
             try:
                 http_request.user = vars(user)
             except TypeError:

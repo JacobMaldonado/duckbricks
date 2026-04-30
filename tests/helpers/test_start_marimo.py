@@ -25,8 +25,16 @@ def test_patch_converts_object_user_to_dict():
 
     fake_from_request = MagicMock(return_value=fake_http_request)
 
-    with patch.dict("sys.modules", {"marimo": MagicMock(), "marimo._runtime": MagicMock(), "marimo._runtime.commands": MagicMock()}):
+    with patch.dict(
+        "sys.modules",
+        {
+            "marimo": MagicMock(),
+            "marimo._runtime": MagicMock(),
+            "marimo._runtime.commands": MagicMock(),
+        },
+    ):
         import sys
+
         commands_mock = sys.modules["marimo._runtime.commands"]
         commands_mock.HTTPRequest = MagicMock()
         commands_mock.HTTPRequest.from_request = fake_from_request
@@ -47,8 +55,16 @@ def test_patch_leaves_dict_user_unchanged():
 
     fake_from_request = MagicMock(return_value=fake_http_request)
 
-    with patch.dict("sys.modules", {"marimo": MagicMock(), "marimo._runtime": MagicMock(), "marimo._runtime.commands": MagicMock()}):
+    with patch.dict(
+        "sys.modules",
+        {
+            "marimo": MagicMock(),
+            "marimo._runtime": MagicMock(),
+            "marimo._runtime.commands": MagicMock(),
+        },
+    ):
         import sys
+
         commands_mock = sys.modules["marimo._runtime.commands"]
         commands_mock.HTTPRequest = MagicMock()
         commands_mock.HTTPRequest.from_request = fake_from_request
@@ -68,8 +84,16 @@ def test_patch_leaves_none_user_unchanged():
 
     fake_from_request = MagicMock(return_value=fake_http_request)
 
-    with patch.dict("sys.modules", {"marimo": MagicMock(), "marimo._runtime": MagicMock(), "marimo._runtime.commands": MagicMock()}):
+    with patch.dict(
+        "sys.modules",
+        {
+            "marimo": MagicMock(),
+            "marimo._runtime": MagicMock(),
+            "marimo._runtime.commands": MagicMock(),
+        },
+    ):
         import sys
+
         commands_mock = sys.modules["marimo._runtime.commands"]
         commands_mock.HTTPRequest = MagicMock()
         commands_mock.HTTPRequest.from_request = fake_from_request
@@ -92,8 +116,16 @@ def test_patch_falls_back_to_empty_dict_when_vars_raises():
 
     fake_from_request = MagicMock(return_value=fake_http_request)
 
-    with patch.dict("sys.modules", {"marimo": MagicMock(), "marimo._runtime": MagicMock(), "marimo._runtime.commands": MagicMock()}):
+    with patch.dict(
+        "sys.modules",
+        {
+            "marimo": MagicMock(),
+            "marimo._runtime": MagicMock(),
+            "marimo._runtime.commands": MagicMock(),
+        },
+    ):
         import sys
+
         commands_mock = sys.modules["marimo._runtime.commands"]
         commands_mock.HTTPRequest = MagicMock()
         commands_mock.HTTPRequest.from_request = fake_from_request

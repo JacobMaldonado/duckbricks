@@ -136,12 +136,8 @@ async def proxy_websocket(client_ws: WebSocket, path: str = "ws") -> None:
         async with websockets.connect(backend_uri, additional_headers=extra_headers) as backend_ws:
             _logger.debug("WS proxy: backend connected for path=%s", path)
 
-            to_backend = asyncio.ensure_future(
-                _forward_client_to_backend(client_ws, backend_ws)
-            )
-            to_client = asyncio.ensure_future(
-                _forward_backend_to_client(backend_ws, client_ws)
-            )
+            to_backend = asyncio.ensure_future(_forward_client_to_backend(client_ws, backend_ws))
+            to_client = asyncio.ensure_future(_forward_backend_to_client(backend_ws, client_ws))
 
             _done, pending = await asyncio.wait(
                 {to_backend, to_client},

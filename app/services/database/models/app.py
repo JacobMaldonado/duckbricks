@@ -19,6 +19,7 @@ class Job(Base):
     description: Mapped[str | None] = mapped_column(Text)
     schedule_cron: Mapped[str | None] = mapped_column(String(100))
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    prefect_deployment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 

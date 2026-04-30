@@ -42,4 +42,10 @@ def _apply_migrations(engine) -> None:
         conn.execute(
             text("ALTER TABLE app.job_tasks ADD COLUMN IF NOT EXISTS file_path VARCHAR(1024) NULL")
         )
+        conn.execute(
+            text(
+                "ALTER TABLE app.jobs"
+                " ADD COLUMN IF NOT EXISTS prefect_deployment_id VARCHAR(36) NULL"
+            )
+        )
         conn.commit()

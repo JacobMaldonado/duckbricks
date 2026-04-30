@@ -5,7 +5,6 @@ import pytest
 from app.services.jobs.executors.base import TaskExecutor
 from app.services.jobs.executors.python_executor import PythonTaskExecutor
 from app.services.jobs.executors.registry import ExecutorRegistry
-from app.services.jobs.executors.sql_executor import SqlTaskExecutor
 
 
 class TestPythonTaskExecutor:

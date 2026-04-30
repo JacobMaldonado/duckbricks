@@ -1,24 +1,33 @@
 """CRUD and execution management for jobs and their tasks."""
 
-from datetime import UTC, datetime
+import asyncio
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
+from prefect.client.schemas.objects import FlowRun
 from sqlalchemy.orm import Session
 
-from app.services.database.models.app import Job, JobExecution, JobTask, TaskExecution
+from app.services.database.models.app import Job, JobTask
 from app.services.database.session import get_session
 from app.services.jobs.executors import ExecutorRegistry
+from app.services.prefect import prefect_client
+
+_log = logging.getLogger(__name__)
+
+_prefect_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="prefect-sync")
 
 
-def _sync_scheduler_on_job(job: Job) -> None:
-    """Notify the scheduler about a job's current state after any CUD operation."""
-    from app.scheduler import prefect_scheduler
+def _run_prefect(coro: Any) -> Any:
+    """Execute a Prefect API coroutine from a synchronous context.
 
-    if job.is_enabled and job.schedule_cron:
-        prefect_scheduler.schedule_job(job.id, job.schedule_cron)
-    else:
-        prefect_scheduler.unschedule_job(job.id)
+    Submits the coroutine to a dedicated thread pool so that it runs in its own
+    event loop, safely isolated from NiceGUI's main async event loop.
+    """
+    future = _prefect_executor.submit(asyncio.run, coro)
+    return future.result()
 
 
 class JobService:
@@ -30,39 +39,37 @@ class JobService:
             session.add(job)
             session.flush()
             session.refresh(job)
-            detached = self._detach(job, session)
-        _sync_scheduler_on_job(detached)
+            detached: Job = self._detach(job, session)
+        self._register_deployment(detached)
         return detached
 
     def list_jobs(self) -> list[Job]:
         with get_session() as session:
-            jobs = session.query(Job).order_by(Job.created_at.desc()).all()
+            jobs: list[Job] = session.query(Job).order_by(Job.created_at.desc()).all()
             for job in jobs:
                 _ = job.tasks
-                _ = job.executions
             session.expunge_all()
             return jobs
 
     def get_job(self, job_id: int) -> Job | None:
         with get_session() as session:
-            job = session.query(Job).filter(Job.id == job_id).first()
+            job: Job | None = session.query(Job).filter(Job.id == job_id).first()
             if job:
                 _ = job.tasks
-                _ = job.executions
                 session.expunge_all()
             return job
 
     def update_job(self, job_id: int, **fields: Any) -> Job | None:
         with get_session() as session:
-            job = session.query(Job).filter(Job.id == job_id).first()
+            job: Job | None = session.query(Job).filter(Job.id == job_id).first()
             if not job:
                 return None
             for key, value in fields.items():
                 setattr(job, key, value)
             session.flush()
             session.refresh(job)
-            detached = self._detach(job, session)
-        _sync_scheduler_on_job(detached)
+            detached: Job = self._detach(job, session)
+        self._sync_deployment(detached)
         return detached
 
     def delete_job(self, job_id: int) -> bool:
@@ -70,23 +77,26 @@ class JobService:
             job = session.query(Job).filter(Job.id == job_id).first()
             if not job:
                 return False
+            deployment_id = job.prefect_deployment_id
             session.delete(job)
-        from app.scheduler import prefect_scheduler
-
-        prefect_scheduler.unschedule_job(job_id)
+        if deployment_id:
+            try:
+                _run_prefect(prefect_client.delete_deployment(UUID(deployment_id)))
+            except Exception as exc:
+                _log.warning("Could not delete Prefect deployment %s: %s", deployment_id, exc)
         return True
 
     def toggle_enabled(self, job_id: int) -> Job | None:
-        """Toggle the is_enabled flag on a job and sync the scheduler accordingly."""
+        """Toggle the is_enabled flag on a job and pause or resume its Prefect deployment."""
         with get_session() as session:
-            job = session.query(Job).filter(Job.id == job_id).first()
+            job: Job | None = session.query(Job).filter(Job.id == job_id).first()
             if not job:
                 return None
             job.is_enabled = not job.is_enabled
             session.flush()
             session.refresh(job)
-            detached = self._detach(job, session)
-        _sync_scheduler_on_job(detached)
+            detached: Job = self._detach(job, session)
+        self._sync_deployment(detached)
         return detached
 
     def add_task(
@@ -103,7 +113,8 @@ class JobService:
             session.add(task)
             session.flush()
             session.refresh(task)
-            return self._detach(task, session)
+            result: JobTask = self._detach(task, session)
+            return result
 
     def replace_tasks(self, job_id: int, task_dicts: list[dict]) -> None:
         """Delete all existing tasks for a job and insert the provided list."""
@@ -128,7 +139,39 @@ class JobService:
             session.delete(task)
             return True
 
-    def run_job(self, job_id: int) -> JobExecution:
+    def run_job(self, job_id: int) -> FlowRun:
+        """Trigger an immediate Prefect flow run for the job and return the FlowRun."""
+        job = self.get_job(job_id)
+        if not job:
+            raise ValueError(f"Job {job_id} not found")
+        if not job.prefect_deployment_id:
+            raise ValueError(
+                f"Job {job_id} has no Prefect deployment. Save the job again to register it."
+            )
+        result: FlowRun = _run_prefect(prefect_client.trigger_run(UUID(job.prefect_deployment_id)))
+        return result
+
+    def list_executions(self, job_id: int, limit: int = 50) -> list[FlowRun]:
+        """Return recent Prefect flow runs for the job, newest first."""
+        job = self.get_job(job_id)
+        if not job or not job.prefect_deployment_id:
+            return []
+        try:
+            runs: list[FlowRun] = _run_prefect(
+                prefect_client.list_runs(UUID(job.prefect_deployment_id), limit=limit)
+            )
+            return runs
+        except Exception as exc:
+            _log.warning("Could not fetch run history for job %d: %s", job_id, exc)
+            return []
+
+    def execute_job_tasks(self, job_id: int) -> None:
+        """Run all tasks for a job sequentially.
+
+        This method is called by the Prefect worker via run_job_flow(). It
+        performs direct task execution without interacting with Prefect, so
+        the worker avoids triggering a recursive deployment loop.
+        """
         with get_session() as session:
             job = session.query(Job).filter(Job.id == job_id).first()
             if not job:
@@ -143,161 +186,52 @@ class JobService:
                 }
                 for t in job.tasks
             ]
+        self._execute_tasks(task_snapshots)
 
-        execution = self._create_job_execution(job_id)
+    def _register_deployment(self, job: Job) -> None:
         try:
-            self._execute_tasks(execution.id, task_snapshots)
+            deployment_id = _run_prefect(prefect_client.create_deployment(job))
+            with get_session() as session:
+                db_job = session.query(Job).filter(Job.id == job.id).first()
+                if db_job:
+                    db_job.prefect_deployment_id = str(deployment_id)
+            job.prefect_deployment_id = str(deployment_id)
         except Exception as exc:
-            self._mark_execution_failed(execution.id, str(exc))
-            raise
-        return self._finalize_job_execution(execution.id)
+            _log.warning("Could not create Prefect deployment for job %d: %s", job.id, exc)
 
-    def list_executions(self, job_id: int) -> list[JobExecution]:
-        with get_session() as session:
-            executions = (
-                session.query(JobExecution)
-                .filter(JobExecution.job_id == job_id)
-                .order_by(JobExecution.started_at.desc())
-                .limit(50)
-                .all()
-            )
-            for ex in executions:
-                _ = ex.task_executions
-            session.expunge_all()
-            return executions
+    def _sync_deployment(self, job: Job) -> None:
+        if not job.prefect_deployment_id:
+            self._register_deployment(job)
+            return
+        deployment_id = UUID(job.prefect_deployment_id)
+        try:
+            _run_prefect(prefect_client.update_deployment(deployment_id, job))
+        except Exception as exc:
+            _log.warning("Could not update Prefect deployment %s: %s", deployment_id, exc)
 
-    def get_execution(self, execution_id: int) -> dict | None:
-        """Return a fully-hydrated plain dict for an execution and all its task runs."""
-        with get_session() as session:
-            execution = session.query(JobExecution).filter(JobExecution.id == execution_id).first()
-            if not execution:
-                return None
-
-            job_name = execution.job.name if execution.job else f"Job #{execution.job_id}"
-            job_tasks_by_id = {t.id: t for t in execution.job.tasks}
-
-            task_execution_snapshots = [
-                {
-                    "id": te.id,
-                    "task_id": te.task_id,
-                    "task_name": job_tasks_by_id[te.task_id].name
-                    if te.task_id in job_tasks_by_id
-                    else f"Task #{te.task_id}",
-                    "executor_type": job_tasks_by_id[te.task_id].executor_type
-                    if te.task_id in job_tasks_by_id
-                    else "unknown",
-                    "position": job_tasks_by_id[te.task_id].position
-                    if te.task_id in job_tasks_by_id
-                    else 0,
-                    "status": te.status,
-                    "started_at": te.started_at,
-                    "completed_at": te.completed_at,
-                    "duration_ms": te.duration_ms,
-                    "output": te.output,
-                    "error_message": te.error_message,
-                }
-                for te in execution.task_executions
-            ]
-
-            completed_task_ids = {te.task_id for te in execution.task_executions}
-            pending_snapshots = [
-                {
-                    "id": None,
-                    "task_id": t.id,
-                    "task_name": t.name,
-                    "executor_type": t.executor_type,
-                    "position": t.position,
-                    "status": "pending",
-                    "started_at": None,
-                    "completed_at": None,
-                    "duration_ms": None,
-                    "output": None,
-                    "error_message": None,
-                }
-                for t in execution.job.tasks
-                if t.id not in completed_task_ids
-            ]
-
-            all_tasks = sorted(
-                task_execution_snapshots + pending_snapshots, key=lambda t: t["position"]
-            )
-
-            return {
-                "id": execution.id,
-                "job_id": execution.job_id,
-                "job_name": job_name,
-                "status": execution.status,
-                "started_at": execution.started_at,
-                "completed_at": execution.completed_at,
-                "duration_ms": execution.duration_ms,
-                "error_message": execution.error_message,
-                "task_executions": all_tasks,
-            }
-
-    def _create_job_execution(self, job_id: int) -> JobExecution:
-        with get_session() as session:
-            execution = JobExecution(job_id=job_id, status="running")
-            session.add(execution)
-            session.flush()
-            session.refresh(execution)
-            return self._detach(execution, session)
-
-    def _execute_tasks(self, execution_id: int, task_snapshots: list[dict[str, Any]]) -> None:
+    def _execute_tasks(self, task_snapshots: list[dict[str, Any]]) -> None:
         for snapshot in sorted(task_snapshots, key=lambda t: t["position"]):
             content = self._resolve_task_content(snapshot)
             start = monotonic()
             executor = ExecutorRegistry.resolve(snapshot["executor_type"])
             result = executor.execute(content, {})
             duration_ms = int((monotonic() - start) * 1000)
-            self._save_task_execution(execution_id, snapshot["id"], result, duration_ms)
+            status = "failed" if result["status"] == "error" else result["status"]
+            _log.info(
+                "Task %d finished in %dms with status=%s", snapshot["id"], duration_ms, status
+            )
 
     def _resolve_task_content(self, snapshot: dict[str, Any]) -> str:
         """Return inline content or read from file_path if one is set."""
-        file_path = snapshot.get("file_path")
+        file_path: str | None = snapshot.get("file_path")
         if not file_path:
-            return snapshot.get("content", "")
+            content: str = snapshot.get("content", "")
+            return content
         try:
             with open(file_path) as fh:
                 return fh.read()
         except OSError as exc:
             raise ValueError(f"Cannot read task file '{file_path}': {exc}") from exc
-
-    def _save_task_execution(
-        self, execution_id: int, task_id: int, result: dict[str, Any], duration_ms: int
-    ) -> None:
-        normalized_status = "failed" if result["status"] == "error" else result["status"]
-        with get_session() as session:
-            task_exec = TaskExecution(
-                job_execution_id=execution_id,
-                task_id=task_id,
-                status=normalized_status,
-                completed_at=datetime.now(UTC),
-                duration_ms=duration_ms,
-                output=result.get("output"),
-                error_message=result.get("output") if result["status"] == "error" else None,
-            )
-            session.add(task_exec)
-
-    def _mark_execution_failed(self, execution_id: int, reason: str) -> None:
-        with get_session() as session:
-            execution = session.query(JobExecution).filter(JobExecution.id == execution_id).first()
-            if execution:
-                execution.status = "failed"
-                execution.completed_at = datetime.now(UTC)
-                session.flush()
-
-    def _finalize_job_execution(self, execution_id: int) -> JobExecution:
-        with get_session() as session:
-            execution = session.query(JobExecution).filter(JobExecution.id == execution_id).first()
-            if not execution:
-                raise ValueError(f"JobExecution {execution_id} not found")
-            task_executions = list(execution.task_executions)
-            has_failure = any(t.status == "failed" for t in task_executions)
-            execution.status = "failed" if has_failure else "success"
-            execution.completed_at = datetime.now(UTC)
-            session.flush()
-            session.refresh(execution)
-            return self._detach(execution, session)
 
     def _detach(self, instance: Any, session: Session) -> Any:
         session.expunge(instance)

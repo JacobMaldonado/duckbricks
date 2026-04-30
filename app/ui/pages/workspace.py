@@ -130,8 +130,10 @@ def _render_file_tree_panel() -> None:
         with ui.element("div").classes("ws-file-tree-icon-strip"):
             ui.icon("folder_open", color="grey-7").classes("text-xl").tooltip("Workspace")
 
-        with ui.element("div").classes("ws-file-tree-body q-pa-sm gap-1").style(
-            "display: flex; flex-direction: column"
+        with (
+            ui.element("div")
+            .classes("ws-file-tree-body q-pa-sm gap-1")
+            .style("display: flex; flex-direction: column")
         ):
             with ui.row().classes("w-full items-center justify-between q-mb-sm"):
                 ui.label("Workspace").classes("text-weight-bold text-body2")
@@ -250,23 +252,27 @@ def _render_editor_panel() -> None:
         .classes("flex-1 gap-2 ws-editor")
         .style("overflow: hidden; height: 100%; display: flex; flex-direction: column")
     ):
-        with ui.row().classes("q-px-md q-pt-md w-full items-center justify-between").style(
-            "flex-shrink: 0"
+        with (
+            ui.row()
+            .classes("q-px-md q-pt-md w-full items-center justify-between")
+            .style("flex-shrink: 0")
         ):
             current_file_label = ui.label("— no file open —").classes("text-caption text-grey-5")
             with ui.row().classes("gap-2"):
                 ui.button("Save", icon="save", on_click=_save_current_file).props(
                     "flat color=primary"
                 ).classes("ws-save-btn").tooltip("Save file")
-                ui.button(
-                    "Edit source", icon="edit", on_click=_deactivate_marimo_mode
-                ).props("flat color=grey-7").classes("ws-edit-source-btn").tooltip(
-                    "Back to code editor"
-                )
+                ui.button("Edit source", icon="edit", on_click=_deactivate_marimo_mode).props(
+                    "flat color=grey-7"
+                ).classes("ws-edit-source-btn").tooltip("Back to code editor")
 
-        with ui.element("div").classes("ws-codemirror-panel").style(
-            "flex: 1; min-height: 0; overflow: visible; display: flex;"
-            " flex-direction: column; padding: 0 16px 16px"
+        with (
+            ui.element("div")
+            .classes("ws-codemirror-panel")
+            .style(
+                "flex: 1; min-height: 0; overflow: visible; display: flex;"
+                " flex-direction: column; padding: 0 16px 16px"
+            )
         ):
             editor = (
                 ui.codemirror(
@@ -488,14 +494,13 @@ def _delete_dialog(node: WorkspaceNode, tree_container: ui.column) -> None:
             ui.label("This will delete the folder and all its contents.").classes("text-grey-7")
         with ui.row().classes("justify-end gap-2 q-mt-md"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button(
-                "Delete",
-                on_click=lambda: [
-                    _do_delete(node),
-                    dialog.close(),
-                    _refresh_tree(tree_container),
-                ],
-            ).props("color=negative")
+
+            def _confirm_delete() -> None:
+                _do_delete(node)
+                dialog.close()
+                _refresh_tree(tree_container)
+
+            ui.button("Delete", on_click=_confirm_delete).props("color=negative")
     dialog.open()
 
 

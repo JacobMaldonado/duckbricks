@@ -36,3 +36,6 @@ HELPERS_PATH: str = os.getenv("DUCKBRICKS_HELPERS_PATH", "/data/.duckbricks")
 
 MARIMO_URL: str = os.getenv("MARIMO_URL", "/marimo")
 MARIMO_INTERNAL_URL: str = os.getenv("MARIMO_INTERNAL_URL", "http://localhost:2718")
+
+PREFECT_INTERNAL_URL: str = os.getenv("PREFECT_INTERNAL_URL", "http://localhost:4200")
+PREFECT_UI_BASE_PATH: str = "/prefect-ui"

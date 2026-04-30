@@ -8,11 +8,12 @@ from fastapi import Request, WebSocket
 from nicegui import app, ui
 
 from app.api.marimo_proxy import proxy_http_request, proxy_websocket
+from app.api.prefect_proxy import proxy_prefect_http
 from app.config import HELPERS_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
-from app.scheduler import prefect_scheduler
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
+from app.services.prefect import prefect_client
 from app.ui.pages.explorer import explorer_page
 from app.ui.pages.job_execution import job_execution_page
 from app.ui.pages.jobs import jobs_page
@@ -37,7 +38,7 @@ def _deploy_workspace_helpers() -> None:
             shutil.copy(source_file, dest / source_file.name)
 
 
-def startup():
+async def startup():
     """Auto-initialize metastore and application database on startup."""
     Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
     _deploy_workspace_helpers()
@@ -50,14 +51,19 @@ def startup():
     except Exception as e:
         print(f"Warning: Could not initialize database: {e}")
     try:
-        prefect_scheduler.start()
-        prefect_scheduler.sync_from_database()
+        await prefect_client.ensure_work_pool()
     except Exception as e:
-        print(f"Warning: Could not start job scheduler: {e}")
+        print(f"Warning: Could not initialize Prefect work pool: {e}")
 
 
 app.on_startup(startup)
 app.add_static_files("/static", "app/ui/static")
+
+
+@app.api_route("/prefect-ui/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"])
+async def prefect_http_proxy(path: str, request: Request):
+    """Reverse-proxy HTTP requests to the internal Prefect server UI and API."""
+    return await proxy_prefect_http(path, request)
 
 
 @app.api_route("/marimo/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"])

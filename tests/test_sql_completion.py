@@ -6,13 +6,12 @@ across 50 scenarios including simple queries, CTEs, subqueries, multiple SELECTs
 JOINs, and error-handling edge cases.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.completion.sql_context_parser import SqlContextParser
-
 
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -153,7 +152,10 @@ class TestExtractTableAliases:
         assert result.get("t2") == "t2"
 
     def test_multiple_chained_joins(self):
-        sql = "SELECT * FROM orders o JOIN products p ON o.pid = p.id JOIN customers c ON o.cid = c.id"
+        sql = (
+            "SELECT * FROM orders o JOIN products p ON o.pid = p.id"
+            " JOIN customers c ON o.cid = c.id"
+        )
         result = SqlContextParser.extract_table_aliases(sql)
         assert result.get("o") == "orders"
         assert result.get("p") == "products"

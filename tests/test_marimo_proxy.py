@@ -75,18 +75,21 @@ class TestProxyWebsocketFunctions:
 
     def test_proxy_websocket_is_async(self):
         import asyncio
+
         from app.api.marimo_proxy import proxy_websocket
 
         assert asyncio.iscoroutinefunction(proxy_websocket)
 
     def test_forward_client_to_backend_is_async(self):
         import asyncio
+
         from app.api.marimo_proxy import _forward_client_to_backend
 
         assert asyncio.iscoroutinefunction(_forward_client_to_backend)
 
     def test_forward_backend_to_client_is_async(self):
         import asyncio
+
         from app.api.marimo_proxy import _forward_backend_to_client
 
         assert asyncio.iscoroutinefunction(_forward_backend_to_client)

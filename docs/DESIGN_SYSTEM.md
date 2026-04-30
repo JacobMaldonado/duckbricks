@@ -1,6 +1,6 @@
 # DuckBricks Design System
 
-**Version:** 1.0.0  
+**Version:** 1.0.0
 **Last Updated:** March 14, 2026
 
 A comprehensive design system for the DuckBricks data platform, balancing professional technical aesthetics with modern, approachable user experience patterns inspired by leading data platforms.
@@ -492,16 +492,16 @@ Use CSS custom properties for theme values:
   --color-primary: #0066CC;
   --color-primary-dark: #004C99;
   --color-neutral-50: #FAFAFA;
-  
+
   /* Spacing */
   --space-1: 4px;
   --space-4: 16px;
-  
+
   /* Typography */
   --font-sans: 'Inter', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
   --text-base: 14px;
-  
+
   /* Borders */
   --radius-sm: 4px;
   --radius-md: 6px;
@@ -538,5 +538,5 @@ DuckBricks design aims to be:
 
 ---
 
-**Maintained by the DuckBricks Design Team**  
+**Maintained by the DuckBricks Design Team**
 Questions? Contact the team or open an issue in the repository.

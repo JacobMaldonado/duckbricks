@@ -36,20 +36,54 @@ class SqlContextParser:
         """
         return bool(
             re.search(
-                r'\b(?:SELECT|WHERE|AND|OR|ON|HAVING|SET|BY)\b[^;]*$',
+                r"\b(?:SELECT|WHERE|AND|OR|ON|HAVING|SET|BY)\b[^;]*$",
                 text_before,
                 re.IGNORECASE | re.DOTALL,
             )
         )
 
     # SQL keywords that the alias capture group must never match.
-    _RESERVED_ALIAS_WORDS: frozenset[str] = frozenset({
-        "from", "join", "left", "right", "inner", "full", "outer", "cross",
-        "lateral", "asof", "anti", "semi", "where", "on", "and", "or",
-        "group", "order", "having", "limit", "offset", "union", "intersect",
-        "except", "select", "with", "as", "by", "set", "into",
-        "update", "insert", "delete", "not", "null", "true", "false",
-    })
+    _RESERVED_ALIAS_WORDS: frozenset[str] = frozenset(
+        {
+            "from",
+            "join",
+            "left",
+            "right",
+            "inner",
+            "full",
+            "outer",
+            "cross",
+            "lateral",
+            "asof",
+            "anti",
+            "semi",
+            "where",
+            "on",
+            "and",
+            "or",
+            "group",
+            "order",
+            "having",
+            "limit",
+            "offset",
+            "union",
+            "intersect",
+            "except",
+            "select",
+            "with",
+            "as",
+            "by",
+            "set",
+            "into",
+            "update",
+            "insert",
+            "delete",
+            "not",
+            "null",
+            "true",
+            "false",
+        }
+    )
 
     # Negative lookahead that prevents SQL keywords from being captured as aliases.
     # Keeping it as a constant makes the compiled pattern easier to read and avoids
@@ -79,15 +113,15 @@ class SqlContextParser:
         aliases: dict[str, str] = {}
         pattern = re.compile(
             r'\b(?:FROM|JOIN)\s+([\w.`"]+)'
-            r'(?:\s+(?:AS\s+)?' + cls._RESERVED_LOOKAHEAD + r'([\w`"]+))?',
+            r"(?:\s+(?:AS\s+)?" + cls._RESERVED_LOOKAHEAD + r'([\w`"]+))?',
             re.IGNORECASE,
         )
         for match in pattern.finditer(sql):
-            path = re.sub(r'[`"]', '', match.group(1)).lower()
-            alias_raw = match.group(2) if match.group(2) else match.group(1).split('.')[-1]
-            alias = re.sub(r'[`"]', '', alias_raw).lower()
+            path = re.sub(r'[`"]', "", match.group(1)).lower()
+            alias_raw = match.group(2) if match.group(2) else match.group(1).split(".")[-1]
+            alias = re.sub(r'[`"]', "", alias_raw).lower()
             aliases[alias] = path
-            aliases[path.split('.')[-1]] = path
+            aliases[path.split(".")[-1]] = path
         return aliases
 
     @staticmethod
@@ -102,5 +136,5 @@ class SqlContextParser:
             "catalog.schema.tbl" → "catalog.schema"
             "users"              → None
         """
-        dot_index = word_text.rfind('.')
+        dot_index = word_text.rfind(".")
         return word_text[:dot_index] if dot_index >= 0 else None

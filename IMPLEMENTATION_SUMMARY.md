@@ -253,7 +253,7 @@ poetry run python -m app.main
 ## ⚠️ Notes
 
 ### Component Coverage (46% vs 80% target)
-The hierarchy tree component has 46% coverage instead of the 80% target. The missing coverage is primarily in the async event handlers (`on_expand` and `on_select`), which are difficult to test in isolation without a full NiceGUI UI context. 
+The hierarchy tree component has 46% coverage instead of the 80% target. The missing coverage is primarily in the async event handlers (`on_expand` and `on_select`), which are difficult to test in isolation without a full NiceGUI UI context.
 
 The fundamental logic is well-tested:
 - ✅ Tree initialization

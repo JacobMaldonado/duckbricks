@@ -2,7 +2,6 @@
 
 import importlib
 import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -95,9 +94,5 @@ class TestConnect:
         with patch("duckdb.connect", return_value=mock_conn):
             utils.connect(override_data_path="/tmp/custom/")
 
-        attach_call = next(
-            str(c)
-            for c in mock_conn.execute.call_args_list
-            if "ATTACH" in str(c)
-        )
+        attach_call = next(str(c) for c in mock_conn.execute.call_args_list if "ATTACH" in str(c))
         assert "/tmp/custom/" in attach_call

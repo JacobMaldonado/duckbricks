@@ -64,4 +64,5 @@ class DatabaseConnection:
         """Open and return a new SQLAlchemy session."""
         if cls._session_factory is None:
             cls.initialize()
+        assert cls._session_factory is not None
         return cls._session_factory()

@@ -5,10 +5,16 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from prefect.client.orchestration import get_client
-from prefect.client.schemas.actions import DeploymentScheduleCreate, DeploymentUpdate, WorkPoolCreate
+from prefect.client.schemas.actions import (
+    DeploymentScheduleCreate,
+    DeploymentUpdate,
+    WorkPoolCreate,
+)
 from prefect.client.schemas.filters import DeploymentFilter, DeploymentFilterId
 from prefect.client.schemas.objects import FlowRun
 from prefect.client.schemas.schedules import CronSchedule
+
+from app.config import PREFECT_EXTERNAL_URL
 
 if TYPE_CHECKING:
     from app.services.database.models.app import Job
@@ -31,12 +37,12 @@ class PrefectApiClient:
         """Create the DuckBricks work pool if it does not already exist."""
         async with get_client() as client:
             try:
-                await client.create_work_pool(
-                    WorkPoolCreate(name=_WORK_POOL_NAME, type="process")
-                )
+                await client.create_work_pool(WorkPoolCreate(name=_WORK_POOL_NAME, type="process"))
                 _log.info("Created Prefect work pool '%s'.", _WORK_POOL_NAME)
             except Exception:
-                _log.debug("Work pool '%s' already exists or could not be created.", _WORK_POOL_NAME)
+                _log.debug(
+                    "Work pool '%s' already exists or could not be created.", _WORK_POOL_NAME
+                )
 
     async def register_flow(self) -> UUID:
         """Register the DuckBricks job flow with Prefect and return its flow ID."""
@@ -103,9 +109,7 @@ class PrefectApiClient:
         """Return the most recent flow runs for a deployment, newest first."""
         async with get_client() as client:
             runs: list[FlowRun] = await client.read_flow_runs(
-                deployment_filter=DeploymentFilter(
-                    id=DeploymentFilterId(any_=[deployment_id])
-                ),
+                deployment_filter=DeploymentFilter(id=DeploymentFilterId(any_=[deployment_id])),
                 limit=limit,
             )
             return runs
@@ -115,13 +119,13 @@ class PrefectApiClient:
         async with get_client() as client:
             return await client.read_flow_run(run_id)
 
-    def deployment_ui_path(self, deployment_id: UUID) -> str:
-        """Return the app-relative path for the Prefect UI deployment detail page."""
-        return f"/prefect-ui/deployments/{deployment_id}"
+    def deployment_ui_url(self, deployment_id: UUID) -> str:
+        """Return the full browser-accessible URL for the Prefect UI deployment page."""
+        return f"{PREFECT_EXTERNAL_URL}/deployments/deployment/{deployment_id}"
 
-    def run_ui_path(self, run_id: UUID) -> str:
-        """Return the app-relative path for the Prefect UI flow run detail page."""
-        return f"/prefect-ui/flow-runs/flow-run/{run_id}"
+    def run_ui_url(self, run_id: UUID) -> str:
+        """Return the full browser-accessible URL for the Prefect UI flow run page."""
+        return f"{PREFECT_EXTERNAL_URL}/flow-runs/flow-run/{run_id}"
 
     @staticmethod
     def _deployment_name(job_id: int, job_name: str) -> str:

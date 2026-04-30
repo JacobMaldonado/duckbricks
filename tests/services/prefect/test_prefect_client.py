@@ -1,7 +1,7 @@
 """Tests for PrefectApiClient — covers deployment and run management with mocked Prefect."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 
@@ -42,7 +42,9 @@ class TestEnsureWorkPool:
     @pytest.mark.asyncio
     async def test_creates_work_pool_when_absent(self):
         mock_client = AsyncMock()
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             await PrefectApiClient().ensure_work_pool()
         mock_client.create_work_pool.assert_awaited_once()
 
@@ -50,7 +52,9 @@ class TestEnsureWorkPool:
     async def test_swallows_exception_when_pool_already_exists(self):
         mock_client = AsyncMock()
         mock_client.create_work_pool.side_effect = Exception("already exists")
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             await PrefectApiClient().ensure_work_pool()
 
 
@@ -59,7 +63,9 @@ class TestRegisterFlow:
     async def test_returns_flow_id_from_prefect(self):
         mock_client = AsyncMock()
         mock_client.create_flow_from_name.return_value = _FLOW_ID
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             result = await PrefectApiClient().register_flow()
         assert result == _FLOW_ID
 
@@ -71,7 +77,9 @@ class TestCreateDeployment:
         mock_client.create_flow_from_name.return_value = _FLOW_ID
         mock_client.create_deployment.return_value = _DEPLOYMENT_ID
         job = _make_job()
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             result = await PrefectApiClient().create_deployment(job)
         assert result == _DEPLOYMENT_ID
         mock_client.create_deployment.assert_awaited_once()
@@ -82,7 +90,9 @@ class TestCreateDeployment:
         mock_client.create_flow_from_name.return_value = _FLOW_ID
         mock_client.create_deployment.return_value = _DEPLOYMENT_ID
         job = _make_job(schedule_cron="0 6 * * *", is_enabled=True)
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             await PrefectApiClient().create_deployment(job)
         call_kwargs = mock_client.create_deployment.call_args.kwargs
         assert len(call_kwargs["schedules"]) == 1
@@ -93,7 +103,9 @@ class TestCreateDeployment:
         mock_client.create_flow_from_name.return_value = _FLOW_ID
         mock_client.create_deployment.return_value = _DEPLOYMENT_ID
         job = _make_job(schedule_cron="0 6 * * *", is_enabled=False)
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             await PrefectApiClient().create_deployment(job)
         call_kwargs = mock_client.create_deployment.call_args.kwargs
         assert call_kwargs["schedules"] == []
@@ -104,7 +116,9 @@ class TestCreateDeployment:
         mock_client.create_flow_from_name.return_value = _FLOW_ID
         mock_client.create_deployment.return_value = _DEPLOYMENT_ID
         job = _make_job(schedule_cron=None, is_enabled=True)
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             await PrefectApiClient().create_deployment(job)
         call_kwargs = mock_client.create_deployment.call_args.kwargs
         assert call_kwargs["schedules"] == []
@@ -114,7 +128,9 @@ class TestDeleteDeployment:
     @pytest.mark.asyncio
     async def test_deletes_deployment_by_id(self):
         mock_client = AsyncMock()
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             await PrefectApiClient().delete_deployment(_DEPLOYMENT_ID)
         mock_client.delete_deployment.assert_awaited_once_with(_DEPLOYMENT_ID)
 
@@ -126,7 +142,9 @@ class TestTriggerRun:
         expected_run = MagicMock()
         expected_run.id = _FLOW_RUN_ID
         mock_client.create_flow_run_from_deployment.return_value = expected_run
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             result = await PrefectApiClient().trigger_run(_DEPLOYMENT_ID)
         assert result == expected_run
         mock_client.create_flow_run_from_deployment.assert_awaited_once_with(_DEPLOYMENT_ID)
@@ -138,23 +156,25 @@ class TestListRuns:
         mock_client = AsyncMock()
         expected_runs = [MagicMock(), MagicMock()]
         mock_client.read_flow_runs.return_value = expected_runs
-        with patch("app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)):
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
             result = await PrefectApiClient().list_runs(_DEPLOYMENT_ID)
         assert result == expected_runs
 
 
 class TestUiPaths:
-    def test_deployment_ui_path_format(self):
+    def test_deployment_ui_url_format(self):
         client = PrefectApiClient()
-        path = client.deployment_ui_path(_DEPLOYMENT_ID)
-        assert str(_DEPLOYMENT_ID) in path
-        assert "deployments" in path
+        url = client.deployment_ui_url(_DEPLOYMENT_ID)
+        assert str(_DEPLOYMENT_ID) in url
+        assert "deployments" in url
 
-    def test_run_ui_path_format(self):
+    def test_run_ui_url_format(self):
         client = PrefectApiClient()
-        path = client.run_ui_path(_FLOW_RUN_ID)
-        assert str(_FLOW_RUN_ID) in path
-        assert "flow-run" in path
+        url = client.run_ui_url(_FLOW_RUN_ID)
+        assert str(_FLOW_RUN_ID) in url
+        assert "flow-run" in url
 
 
 class TestDeploymentName:

@@ -7,7 +7,7 @@ from nicegui import ui
 from prefect.client.schemas.objects import FlowRun
 from sqlalchemy.exc import OperationalError
 
-from app.config import PREFECT_UI_BASE_PATH, WORKSPACE_PATH
+from app.config import WORKSPACE_PATH
 from app.services.database.connection import DatabaseConnection
 from app.services.database.models.app import Job
 from app.services.jobs import JobService
@@ -144,12 +144,12 @@ def _run_job_now(job: Job, jobs_container: ui.column) -> None:
     try:
         flow_run = _job_service.run_job(job.id)
         notification.dismiss()
-        run_path = prefect_client.run_ui_path(flow_run.id)
+        run_url = prefect_client.run_ui_url(flow_run.id)
         ui.notification(
             f"Job '{job.name}' triggered. Run ID: {flow_run.name}",
             type="positive",
         )
-        _open_prefect_iframe_dialog(f"Run — {job.name}", run_path)
+        _open_prefect_iframe_dialog(f"Run — {job.name}", run_url)
     except Exception as exc:
         notification.dismiss()
         ui.notification(f"Could not trigger '{job.name}': {exc}", type="negative")
@@ -182,8 +182,8 @@ def _open_deployment_details(job: Job) -> None:
     if not job.prefect_deployment_id:
         ui.notification("No Prefect deployment registered for this job.", type="warning")
         return
-    deployment_path = prefect_client.deployment_ui_path(UUID(job.prefect_deployment_id))
-    _open_prefect_iframe_dialog(f"Deployment — {job.name}", deployment_path)
+    deployment_url = prefect_client.deployment_ui_url(UUID(job.prefect_deployment_id))
+    _open_prefect_iframe_dialog(f"Deployment — {job.name}", deployment_url)
 
 
 def _open_run_history(job: Job) -> None:
@@ -206,11 +206,11 @@ def _render_flow_run_row(run: FlowRun, parent_dialog: ui.dialog) -> None:
     color = _STATE_COLORS.get(state_name.upper(), "grey")
     started = str(run.start_time)[:19] if run.start_time else "—"
     duration = f"{int(run.total_run_time.total_seconds())}s" if run.total_run_time else "—"
-    run_path = prefect_client.run_ui_path(run.id)
+    run_url = prefect_client.run_ui_url(run.id)
 
-    def _open_run(r_path: str = run_path) -> None:
+    def _open_run(r_url: str = run_url) -> None:
         parent_dialog.close()
-        _open_prefect_iframe_dialog(f"Run — {run.name}", r_path)
+        _open_prefect_iframe_dialog(f"Run — {run.name}", r_url)
 
     with ui.card().classes("w-full cursor-pointer hover:bg-grey-2").on("click", _open_run):
         with ui.row().classes("w-full items-center justify-between q-pa-sm"):
@@ -223,19 +223,16 @@ def _render_flow_run_row(run: FlowRun, parent_dialog: ui.dialog) -> None:
                 ui.label(duration).classes("text-caption text-grey-6")
 
 
-def _open_prefect_iframe_dialog(title: str, path: str) -> None:
-    """Open a full-screen dialog embedding the Prefect UI at the given path."""
-    prefect_url = f"{PREFECT_UI_BASE_PATH}/{path.lstrip('/')}"
+def _open_prefect_iframe_dialog(title: str, url: str) -> None:
+    """Open a full-screen dialog embedding the Prefect UI at the given URL."""
     with ui.dialog().props("maximized") as dialog, ui.card().classes("w-full h-full"):
         with ui.row().classes("w-full items-center justify-between q-pa-sm"):
             ui.label(title).classes("text-h6")
             with ui.row().classes("items-center gap-2"):
-                ui.link("Open in new tab", prefect_url, new_tab=True).classes(
-                    "text-caption text-primary"
-                )
+                ui.link("Open in new tab", url, new_tab=True).classes("text-caption text-primary")
                 ui.button(icon="close", on_click=dialog.close).props("flat dense")
         ui.html(
-            f'<iframe src="{prefect_url}" '
+            f'<iframe src="{url}" '
             f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>'
         )
     dialog.open()

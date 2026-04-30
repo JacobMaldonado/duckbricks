@@ -4,8 +4,6 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.services.jobs.scheduler import PrefectJobScheduler
 
 
@@ -142,6 +140,7 @@ async def _start_and_verify(scheduler: PrefectJobScheduler) -> None:
 async def _start_and_shutdown(scheduler: PrefectJobScheduler) -> None:
     scheduler.start()
     task = scheduler._loop_task
+    assert task is not None
     scheduler.shutdown()
     await asyncio.sleep(0)
     assert scheduler._loop_task is None

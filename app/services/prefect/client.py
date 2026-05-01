@@ -24,6 +24,7 @@ _log = logging.getLogger(__name__)
 _FLOW_NAME = "duckbricks-job"
 _WORK_POOL_NAME = "duckbricks-pool"
 _ENTRYPOINT = "app/services/jobs/prefect_flows.py:run_job_flow"
+_FLOW_PATH = "/app"
 
 
 class PrefectApiClient:
@@ -59,6 +60,7 @@ class PrefectApiClient:
                 flow_id=flow_id,
                 name=self._deployment_name(job.id, job.name),
                 entrypoint=_ENTRYPOINT,
+                path=_FLOW_PATH,
                 work_pool_name=_WORK_POOL_NAME,
                 parameters={"job_id": job.id},
                 schedules=schedules,
@@ -69,12 +71,16 @@ class PrefectApiClient:
             return deployment_id
 
     async def update_deployment(self, deployment_id: UUID, job: "Job") -> None:
-        """Update an existing Prefect deployment to reflect job changes."""
+        """Update an existing Prefect deployment to reflect job changes.
+
+        Also patches `path` so deployments created before this fix self-heal
+        the next time the job is saved.
+        """
         async with get_client() as client:
             schedules = self._build_schedules(job.schedule_cron if job.is_enabled else None)
             await client.update_deployment(
                 deployment_id,
-                DeploymentUpdate(description=job.description),
+                DeploymentUpdate(description=job.description, path=_FLOW_PATH),
             )
             existing = await client.read_deployment_schedules(deployment_id)
             for existing_sched in existing:

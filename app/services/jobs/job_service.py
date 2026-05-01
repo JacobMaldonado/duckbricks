@@ -216,10 +216,15 @@ class JobService:
             executor = ExecutorRegistry.resolve(snapshot["executor_type"])
             result = executor.execute(content, {})
             duration_ms = int((monotonic() - start) * 1000)
-            status = "failed" if result["status"] == "error" else result["status"]
+            status = result.get("status", "error")
             _log.info(
                 "Task %d finished in %dms with status=%s", snapshot["id"], duration_ms, status
             )
+            if status == "error":
+                raise RuntimeError(
+                    f"Task {snapshot['id']} ({snapshot.get('name', '')}) failed: "
+                    f"{result.get('output', 'unknown error')}"
+                )
 
     def _resolve_task_content(self, snapshot: dict[str, Any]) -> str:
         """Return inline content or read from file_path if one is set."""

@@ -62,12 +62,16 @@ services:
     command: prefect worker start --pool duckbricks-pool
     environment:
       PREFECT_API_URL: http://prefect-server:4200/api
+      MARIMO_URL: /marimo
+      MARIMO_INTERNAL_URL: http://marimo:2718
     env_file:
       - .env
     volumes:
       - duckbricks-data:/data
     depends_on:
       prefect-server:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     restart: unless-stopped
 

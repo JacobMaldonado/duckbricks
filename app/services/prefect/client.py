@@ -133,6 +133,14 @@ class PrefectApiClient:
         """Return the full browser-accessible URL for the Prefect UI flow run page."""
         return f"{PREFECT_EXTERNAL_URL}/flow-runs/flow-run/{run_id}"
 
+    def deployment_proxy_path(self, deployment_id: UUID) -> str:
+        """Return the same-origin proxy path for embedding a deployment page in an iframe."""
+        return f"/prefect-ui/deployments/deployment/{deployment_id}"
+
+    def run_proxy_path(self, run_id: UUID) -> str:
+        """Return the same-origin proxy path for embedding a flow run page in an iframe."""
+        return f"/prefect-ui/flow-runs/flow-run/{run_id}"
+
     @staticmethod
     def _deployment_name(job_id: int, job_name: str) -> str:
         sanitized = job_name.lower().replace(" ", "-")[:50]

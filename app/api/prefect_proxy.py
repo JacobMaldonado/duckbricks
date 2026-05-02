@@ -23,7 +23,14 @@ _HOP_BY_HOP_HEADERS = frozenset(
     ]
 )
 _REQUEST_HEADERS_DROPPED = frozenset(["host", "accept-encoding"])
-_RESPONSE_HEADERS_DROPPED = frozenset(["content-encoding", "content-length"])
+_RESPONSE_HEADERS_DROPPED = frozenset(
+    [
+        "content-encoding",
+        "content-length",
+        "x-frame-options",
+        "content-security-policy",
+    ]
+)
 
 
 def _strip_hop_by_hop(headers: dict) -> dict:

@@ -28,9 +28,15 @@ _STATE_COLORS: dict[str, str] = {
     "PAUSED": "grey",
 }
 
+_EXECUTOR_EXTENSIONS: dict[str, list[str]] = {
+    "sql": ["sql"],
+    "python": ["py", "ipynb"],
+}
 
-def _list_workspace_files(extensions: list[str]) -> list[str]:
-    """Return absolute paths of workspace files matching the given extensions."""
+
+def _list_workspace_files(executor_type: str) -> list[str]:
+    """Return absolute paths of workspace files compatible with the given executor type."""
+    extensions = _EXECUTOR_EXTENSIONS.get(executor_type, [])
     root = Path(WORKSPACE_PATH)
     if not root.exists():
         return []
@@ -144,12 +150,13 @@ def _run_job_now(job: Job, jobs_container: ui.column) -> None:
     try:
         flow_run = _job_service.run_job(job.id)
         notification.dismiss()
+        proxy_path = prefect_client.run_proxy_path(flow_run.id)
         run_url = prefect_client.run_ui_url(flow_run.id)
         ui.notification(
             f"Job '{job.name}' triggered. Run ID: {flow_run.name}",
             type="positive",
         )
-        _open_prefect_iframe_dialog(f"Run — {job.name}", run_url)
+        _open_prefect_iframe_dialog(f"Run — {job.name}", proxy_path, run_url)
     except Exception as exc:
         notification.dismiss()
         ui.notification(f"Could not trigger '{job.name}': {exc}", type="negative")
@@ -182,8 +189,10 @@ def _open_deployment_details(job: Job) -> None:
     if not job.prefect_deployment_id:
         ui.notification("No Prefect deployment registered for this job.", type="warning")
         return
-    deployment_url = prefect_client.deployment_ui_url(UUID(job.prefect_deployment_id))
-    _open_prefect_iframe_dialog(f"Deployment — {job.name}", deployment_url)
+    dep_id = UUID(job.prefect_deployment_id)
+    proxy_path = prefect_client.deployment_proxy_path(dep_id)
+    external_url = prefect_client.deployment_ui_url(dep_id)
+    _open_prefect_iframe_dialog(f"Deployment — {job.name}", proxy_path, external_url)
 
 
 def _open_run_history(job: Job) -> None:
@@ -206,11 +215,12 @@ def _render_flow_run_row(run: FlowRun, parent_dialog: ui.dialog) -> None:
     color = _STATE_COLORS.get(state_name.upper(), "grey")
     started = str(run.start_time)[:19] if run.start_time else "—"
     duration = f"{int(run.total_run_time.total_seconds())}s" if run.total_run_time else "—"
+    proxy_path = prefect_client.run_proxy_path(run.id)
     run_url = prefect_client.run_ui_url(run.id)
 
-    def _open_run(r_url: str = run_url) -> None:
+    def _open_run() -> None:
         parent_dialog.close()
-        _open_prefect_iframe_dialog(f"Run — {run.name}", r_url)
+        _open_prefect_iframe_dialog(f"Run — {run.name}", proxy_path, run_url)
 
     with ui.card().classes("w-full cursor-pointer hover:bg-grey-2").on("click", _open_run):
         with ui.row().classes("w-full items-center justify-between q-pa-sm"):
@@ -223,16 +233,22 @@ def _render_flow_run_row(run: FlowRun, parent_dialog: ui.dialog) -> None:
                 ui.label(duration).classes("text-caption text-grey-6")
 
 
-def _open_prefect_iframe_dialog(title: str, url: str) -> None:
-    """Open a full-screen dialog embedding the Prefect UI at the given URL."""
+def _open_prefect_iframe_dialog(title: str, proxy_path: str, external_url: str) -> None:
+    """Open a full-screen dialog embedding the Prefect UI via the same-origin proxy.
+
+    The iframe uses the proxy path (same origin) to avoid X-Frame-Options blocking.
+    The external URL is offered as a fallback "Open in new tab" link.
+    """
     with ui.dialog().props("maximized") as dialog, ui.card().classes("w-full h-full"):
         with ui.row().classes("w-full items-center justify-between q-pa-sm"):
             ui.label(title).classes("text-h6")
             with ui.row().classes("items-center gap-2"):
-                ui.link("Open in new tab", url, new_tab=True).classes("text-caption text-primary")
+                ui.link("Open in new tab", external_url, new_tab=True).classes(
+                    "text-caption text-primary"
+                )
                 ui.button(icon="close", on_click=dialog.close).props("flat dense")
         ui.html(
-            f'<iframe src="{url}" '
+            f'<iframe src="{proxy_path}" '
             f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>'
         )
     dialog.open()
@@ -358,7 +374,7 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
             .style("min-height: 120px")
         )
 
-        workspace_files = _list_workspace_files(["sql", "py", "ipynb"])
+        workspace_files = _list_workspace_files(initial_executor)
         file_path = task_def.get("file_path")
         file_select = ui.select(
             workspace_files,
@@ -378,6 +394,11 @@ def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) 
             lang = "SQL" if executor == "sql" else "Python"
             inline_editor.set_language(lang)  # type: ignore[arg-type]
             inline_editor.update()
+            new_files = _list_workspace_files(executor)
+            file_select.options = new_files
+            if file_select.value not in new_files:
+                file_select.value = None
+            file_select.update()
 
         _apply_mode(mode_toggle.value)
         mode_toggle.on_value_change(lambda e: _apply_mode(e.value))

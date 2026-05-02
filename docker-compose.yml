@@ -44,6 +44,7 @@ services:
     environment:
       PREFECT_SERVER_DATABASE_CONNECTION_URL: "postgresql+asyncpg://duckbricks:duckbricks@postgres/prefect"
       PREFECT_UI_API_URL: "${PREFECT_EXTERNAL_URL:-http://localhost:4200}/api"
+      PREFECT_UI_SERVE_BASE: "/prefect-ui"
     volumes:
       - prefect-data:/root/.prefect
     depends_on:

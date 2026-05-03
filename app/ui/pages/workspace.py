@@ -95,33 +95,6 @@ body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
     flex-direction: column;
 }
 
-/* Nav drawer: CSS-only collapse in marimo mode (no Quasar mini prop) */
-body.ws-marimo-mode .q-drawer {
-    width: 57px !important;
-    overflow: hidden !important;
-    transition: width 0.25s ease !important;
-}
-body.ws-marimo-mode .q-drawer .q-item__section--main {
-    opacity: 0 !important;
-    width: 0 !important;
-    overflow: hidden !important;
-    padding: 0 !important;
-    transition: opacity 0.25s ease, width 0.25s ease !important;
-}
-/* Expand as floating overlay on hover */
-body.ws-marimo-mode .q-drawer:hover {
-    width: 200px !important;
-    overflow: visible !important;
-    z-index: 1500 !important;
-    box-shadow: 4px 0 16px rgba(0,0,0,0.2) !important;
-}
-body.ws-marimo-mode .q-drawer:hover .q-item__section--main {
-    opacity: 1 !important;
-    width: auto !important;
-    overflow: visible !important;
-    padding: 0 16px !important;
-}
-
 /* Editor vs iframe toggling */
 body.ws-marimo-mode .ws-codemirror-panel { display: none !important; }
 body.ws-marimo-mode .ws-marimo-iframe { display: flex !important; }
@@ -321,6 +294,24 @@ def _render_editor_panel() -> None:
         ui.context.client.storage["_ws_drag_source"] = ""
 
 
+def _on_drawer_mouseenter() -> None:
+    storage = ui.context.client.storage
+    if not storage.get("_ws_marimo_active"):
+        return
+    drawer = storage.get("_ws_nav_drawer")
+    if drawer:
+        drawer.props(remove="mini")
+
+
+def _on_drawer_mouseleave() -> None:
+    storage = ui.context.client.storage
+    if not storage.get("_ws_marimo_active"):
+        return
+    drawer = storage.get("_ws_nav_drawer")
+    if drawer:
+        drawer.props(add="mini")
+
+
 def _activate_marimo_mode(relative_path: str) -> None:
     marimo_file_url = f"{MARIMO_URL}/?file={urllib.parse.quote(relative_path)}"
     storage = ui.context.client.storage
@@ -329,6 +320,15 @@ def _activate_marimo_mode(relative_path: str) -> None:
     label: ui.label = storage.get("_ws_label")
     if label:
         label.set_text(relative_path)
+
+    drawer = storage.get("_ws_nav_drawer")
+    if drawer:
+        storage["_ws_marimo_active"] = True
+        drawer.props(add="mini")
+        if not storage.get("_ws_drawer_hover_registered"):
+            storage["_ws_drawer_hover_registered"] = True
+            drawer.on("mouseenter", _on_drawer_mouseenter)
+            drawer.on("mouseleave", _on_drawer_mouseleave)
 
     ui.run_javascript(
         "document.body.classList.add('ws-marimo-mode');"
@@ -339,6 +339,11 @@ def _activate_marimo_mode(relative_path: str) -> None:
 
 def _deactivate_marimo_mode() -> None:
     storage = ui.context.client.storage
+    storage["_ws_marimo_active"] = False
+
+    drawer = storage.get("_ws_nav_drawer")
+    if drawer:
+        drawer.props(remove="mini")
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"

@@ -38,8 +38,13 @@ def _strip_hop_by_hop(headers: dict) -> dict:
 
 
 async def proxy_prefect_http(path: str, request: Request) -> Response:
-    """Forward an HTTP request to the internal Prefect server."""
-    target_url = f"{PREFECT_INTERNAL_URL}/{path}"
+    """Forward an HTTP request to the internal Prefect server.
+
+    The proxy is mounted at /prefect-ui/{path}. Because PREFECT_UI_SERVE_BASE
+    is set to /prefect-ui on the Prefect server, the target URL must also
+    include the /prefect-ui prefix so the paths align correctly.
+    """
+    target_url = f"{PREFECT_INTERNAL_URL}/prefect-ui/{path}"
     query_string = request.url.query
     if query_string:
         target_url = f"{target_url}?{query_string}"

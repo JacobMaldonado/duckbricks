@@ -127,11 +127,11 @@ class PrefectApiClient:
 
     def deployment_ui_url(self, deployment_id: UUID) -> str:
         """Return the full browser-accessible URL for the Prefect UI deployment page."""
-        return f"{PREFECT_EXTERNAL_URL}/deployments/deployment/{deployment_id}"
+        return f"{PREFECT_EXTERNAL_URL}/prefect-ui/deployments/deployment/{deployment_id}"
 
     def run_ui_url(self, run_id: UUID) -> str:
         """Return the full browser-accessible URL for the Prefect UI flow run page."""
-        return f"{PREFECT_EXTERNAL_URL}/flow-runs/flow-run/{run_id}"
+        return f"{PREFECT_EXTERNAL_URL}/prefect-ui/flow-runs/flow-run/{run_id}"
 
     def deployment_proxy_path(self, deployment_id: UUID) -> str:
         """Return the same-origin proxy path for embedding a deployment page in an iframe."""

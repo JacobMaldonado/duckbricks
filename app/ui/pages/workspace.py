@@ -95,6 +95,17 @@ body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
     flex-direction: column;
 }
 
+/* Nav drawer mini mode: center icons when collapsed */
+.q-drawer--mini .q-item {
+    justify-content: center !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+}
+.q-drawer--mini .q-item__section--side {
+    padding-right: 0 !important;
+    min-width: unset !important;
+}
+
 /* Editor vs iframe toggling */
 body.ws-marimo-mode .ws-codemirror-panel { display: none !important; }
 body.ws-marimo-mode .ws-marimo-iframe { display: flex !important; }

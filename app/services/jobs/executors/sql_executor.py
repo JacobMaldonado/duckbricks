@@ -9,7 +9,9 @@ from app.services.metastore import manager
 class SqlTaskExecutor(TaskExecutor):
     """Runs a SQL query against the DuckLake catalog and returns row count + preview."""
 
-    def execute(self, content: str, context: dict[str, Any]) -> dict[str, Any]:
+    def execute(
+        self, content: str, context: dict[str, Any], file_path: str | None = None
+    ) -> dict[str, Any]:
         result = manager.execute_query(content)
         if not result.get("success", False):
             return {"status": "error", "output": result.get("error", "Unknown error")}

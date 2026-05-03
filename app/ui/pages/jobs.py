@@ -248,9 +248,10 @@ def _open_prefect_iframe_dialog(title: str, proxy_path: str, external_url: str) 
                 )
                 ui.button(icon="close", on_click=dialog.close).props("flat dense")
         ui.html(
-            f'<iframe src="{proxy_path}" '
-            f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>'
-        )
+            f'<iframe src="{external_url}" '
+            f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>',
+            sanitize=False,
+        ).classes("w-full h-full mb-[-16px]")
     dialog.open()
 
 

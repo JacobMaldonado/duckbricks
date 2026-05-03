@@ -212,9 +212,10 @@ class JobService:
     def _execute_tasks(self, task_snapshots: list[dict[str, Any]]) -> None:
         for snapshot in sorted(task_snapshots, key=lambda t: t["position"]):
             content = self._resolve_task_content(snapshot)
+            file_path: str | None = snapshot.get("file_path")
             start = monotonic()
             executor = ExecutorRegistry.resolve(snapshot["executor_type"])
-            result = executor.execute(content, {})
+            result = executor.execute(content, {}, file_path=file_path)
             duration_ms = int((monotonic() - start) * 1000)
             status = result.get("status", "error")
             _log.info(

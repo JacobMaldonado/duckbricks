@@ -105,12 +105,21 @@ body.ws-marimo-mode .q-drawer--mini:hover {
     z-index: 1500 !important;
     box-shadow: 4px 0 16px rgba(0,0,0,0.2) !important;
 }
-body.ws-marimo-mode .q-drawer--mini:hover .q-item__section--main {
+body.ws-marimo-mode .q-drawer--mini:hover .q-drawer__content {
+    overflow: visible !important;
+    width: 200px !important;
+}
+body.ws-marimo-mode .q-drawer--mini:hover .q-item {
+    overflow: visible !important;
+}
+/* Mirror Quasar's exact mini-mode selectors so specificity beats theirs */
+body.ws-marimo-mode .q-drawer--mini:hover .q-item > .q-item__section--main,
+body.ws-marimo-mode .q-drawer--mini:hover .q-item > .q-focus-helper + .q-item__section--main {
     width: auto !important;
     overflow: visible !important;
     opacity: 1 !important;
     padding: 0 16px !important;
-    max-width: 160px !important;
+    max-width: none !important;
 }
 
 /* Editor vs iframe toggling */

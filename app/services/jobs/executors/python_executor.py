@@ -1,6 +1,7 @@
 """Executes Python scripts in a sandboxed namespace or as a subprocess."""
 
 import io
+import os
 import subprocess
 import sys
 import traceback
@@ -27,17 +28,29 @@ class PythonTaskExecutor(TaskExecutor):
         return self._execute_inline(content, context)
 
     def _execute_file(self, file_path: str) -> dict[str, Any]:
-        """Run a Python file as a subprocess so inspect and __file__ work correctly."""
-        result = subprocess.run(  # noqa: S603
+        """Run a Python file as a subprocess, streaming each output line in real-time.
+
+        PYTHONUNBUFFERED=1 ensures the child process flushes stdout immediately
+        instead of batching into the OS pipe buffer. Each line is printed so
+        Prefect's log_prints=True captures it as a structured log record.
+        """
+        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        process = subprocess.Popen(  # noqa: S603
             [sys.executable, file_path],
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
+            env=env,
         )
-        output = result.stdout
-        if result.returncode != 0:
-            error_detail = result.stderr or result.stdout or "Process exited with non-zero status"
-            return {"status": "error", "output": error_detail}
-        return {"status": "success", "output": output}
+        output_lines: list[str] = []
+        for raw_line in process.stdout:  # type: ignore[union-attr]
+            line = raw_line.rstrip("\n")
+            print(line, flush=True)
+            output_lines.append(line)
+        process.wait()
+        if process.returncode != 0:
+            return {"status": "error", "output": "\n".join(output_lines)}
+        return {"status": "success", "output": "\n".join(output_lines)}
 
     def _execute_inline(self, content: str, context: dict[str, Any]) -> dict[str, Any]:
         """Run an inline Python script string using exec() in an isolated namespace."""

@@ -95,6 +95,24 @@ body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
     flex-direction: column;
 }
 
+/* Nav drawer: hover-expand when collapsed to mini in marimo mode */
+body.ws-marimo-mode .q-drawer--mini {
+    overflow: visible !important;
+    transition: width 0.25s ease !important;
+}
+body.ws-marimo-mode .q-drawer--mini:hover {
+    width: 200px !important;
+    z-index: 1500 !important;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.2) !important;
+}
+body.ws-marimo-mode .q-drawer--mini:hover .q-item__section--main {
+    width: auto !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    padding: 0 16px !important;
+    max-width: 160px !important;
+}
+
 /* Editor vs iframe toggling */
 body.ws-marimo-mode .ws-codemirror-panel { display: none !important; }
 body.ws-marimo-mode .ws-marimo-iframe { display: flex !important; }
@@ -305,7 +323,7 @@ def _activate_marimo_mode(relative_path: str) -> None:
 
     drawer = storage.get("_ws_nav_drawer")
     if drawer:
-        drawer.props(add="mini mini-to-overlay")
+        drawer.props(add="mini")
 
     ui.run_javascript(
         "document.body.classList.add('ws-marimo-mode');"
@@ -319,7 +337,7 @@ def _deactivate_marimo_mode() -> None:
 
     drawer = storage.get("_ws_nav_drawer")
     if drawer:
-        drawer.props(remove="mini mini-to-overlay")
+        drawer.props(remove="mini")
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"

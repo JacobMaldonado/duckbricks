@@ -97,13 +97,13 @@ body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
 
 /* Nav drawer mini mode: center icons when collapsed */
 .q-drawer--mini .q-item {
+    padding: 8px 0 !important;
     justify-content: center !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
 }
-.q-drawer--mini .q-item__section--side {
+.q-drawer--mini .q-item__section--avatar {
+    min-width: 24px !important;
+    width: 24px !important;
     padding-right: 0 !important;
-    min-width: unset !important;
 }
 
 /* Editor vs iframe toggling */

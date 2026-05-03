@@ -95,31 +95,31 @@ body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
     flex-direction: column;
 }
 
-/* Nav drawer: hover-expand when collapsed to mini in marimo mode */
-body.ws-marimo-mode .q-drawer--mini {
-    overflow: visible !important;
+/* Nav drawer: CSS-only collapse in marimo mode (no Quasar mini prop) */
+body.ws-marimo-mode .q-drawer {
+    width: 57px !important;
+    overflow: hidden !important;
     transition: width 0.25s ease !important;
 }
-body.ws-marimo-mode .q-drawer--mini:hover {
+body.ws-marimo-mode .q-drawer .q-item__section--main {
+    opacity: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    padding: 0 !important;
+    transition: opacity 0.25s ease, width 0.25s ease !important;
+}
+/* Expand as floating overlay on hover */
+body.ws-marimo-mode .q-drawer:hover {
     width: 200px !important;
+    overflow: visible !important;
     z-index: 1500 !important;
     box-shadow: 4px 0 16px rgba(0,0,0,0.2) !important;
 }
-body.ws-marimo-mode .q-drawer--mini:hover .q-drawer__content {
-    overflow: visible !important;
-    width: 200px !important;
-}
-body.ws-marimo-mode .q-drawer--mini:hover .q-item {
-    overflow: visible !important;
-}
-/* Mirror Quasar's exact mini-mode selectors so specificity beats theirs */
-body.ws-marimo-mode .q-drawer--mini:hover .q-item > .q-item__section--main,
-body.ws-marimo-mode .q-drawer--mini:hover .q-item > .q-focus-helper + .q-item__section--main {
+body.ws-marimo-mode .q-drawer:hover .q-item__section--main {
+    opacity: 1 !important;
     width: auto !important;
     overflow: visible !important;
-    opacity: 1 !important;
     padding: 0 16px !important;
-    max-width: none !important;
 }
 
 /* Editor vs iframe toggling */
@@ -330,10 +330,6 @@ def _activate_marimo_mode(relative_path: str) -> None:
     if label:
         label.set_text(relative_path)
 
-    drawer = storage.get("_ws_nav_drawer")
-    if drawer:
-        drawer.props(add="mini")
-
     ui.run_javascript(
         "document.body.classList.add('ws-marimo-mode');"
         f"var iframe = document.querySelector('.ws-marimo-iframe');"
@@ -343,10 +339,6 @@ def _activate_marimo_mode(relative_path: str) -> None:
 
 def _deactivate_marimo_mode() -> None:
     storage = ui.context.client.storage
-
-    drawer = storage.get("_ws_nav_drawer")
-    if drawer:
-        drawer.props(remove="mini")
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"

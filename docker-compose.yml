@@ -1,6 +1,6 @@
 services:
   ungit:
-    image: nicowillis/ungit:latest
+    image: miebach/ungit
     ports:
       - "8448:8448"
     volumes:

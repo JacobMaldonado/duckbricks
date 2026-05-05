@@ -95,17 +95,6 @@ body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
     flex-direction: column;
 }
 
-/* Nav drawer mini mode: center icons when collapsed */
-.q-drawer--mini .q-item {
-    padding: 8px 0 !important;
-    justify-content: center !important;
-}
-.q-drawer--mini .q-item__section--avatar {
-    min-width: 24px !important;
-    width: 24px !important;
-    padding-right: 0 !important;
-}
-
 /* Editor vs iframe toggling */
 body.ws-marimo-mode .ws-codemirror-panel { display: none !important; }
 body.ws-marimo-mode .ws-marimo-iframe { display: flex !important; }
@@ -311,7 +300,7 @@ def _on_drawer_mouseenter() -> None:
         return
     drawer = storage.get("_ws_nav_drawer")
     if drawer:
-        drawer.props(remove="mini")
+        drawer.props(remove="mini").classes(remove="pl-4")
 
 
 def _on_drawer_mouseleave() -> None:
@@ -320,7 +309,7 @@ def _on_drawer_mouseleave() -> None:
         return
     drawer = storage.get("_ws_nav_drawer")
     if drawer:
-        drawer.props(add="mini")
+        drawer.props(add="mini").classes(add="pl-4")
 
 
 def _activate_marimo_mode(relative_path: str) -> None:
@@ -335,7 +324,7 @@ def _activate_marimo_mode(relative_path: str) -> None:
     drawer = storage.get("_ws_nav_drawer")
     if drawer:
         storage["_ws_marimo_active"] = True
-        drawer.props(add="mini")
+        drawer.props(add="mini").classes(add="pl-4")
         if not storage.get("_ws_drawer_hover_registered"):
             storage["_ws_drawer_hover_registered"] = True
             drawer.on("mouseenter", _on_drawer_mouseenter)
@@ -354,7 +343,7 @@ def _deactivate_marimo_mode() -> None:
 
     drawer = storage.get("_ws_nav_drawer")
     if drawer:
-        drawer.props(remove="mini")
+        drawer.props(remove="mini").classes(remove="pl-4")
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"

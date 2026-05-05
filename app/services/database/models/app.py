@@ -1,8 +1,8 @@
-"""SQLAlchemy ORM models for the app schema — jobs, tasks, and execution history."""
+"""SQLAlchemy ORM models for the app schema — jobs, tasks, execution history, and git."""
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.services.database.base import Base
@@ -99,3 +99,42 @@ class TaskExecution(Base):
         "JobExecution", back_populates="task_executions"
     )
     task: Mapped["JobTask"] = relationship("JobTask", back_populates="executions")
+
+
+class GitConnection(Base):
+    """A stored connection to a git provider (e.g. GitHub) with encrypted credentials."""
+
+    __tablename__ = "git_connections"
+    __table_args__ = {"schema": "app"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    provider_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    token_encrypted: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+
+    git_folders: Mapped[list["GitFolder"]] = relationship(
+        "GitFolder", back_populates="connection", cascade="all, delete-orphan"
+    )
+
+
+class GitFolder(Base):
+    """A workspace folder backed by a git repository, tracked with connection metadata."""
+
+    __tablename__ = "git_folders"
+    __table_args__ = {"schema": "app"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_path: Mapped[str] = mapped_column(String(1024), nullable=False, unique=True)
+    git_connection_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("app.git_connections.id", ondelete="CASCADE"), nullable=False
+    )
+    repo_url: Mapped[str] = mapped_column(String(1024), nullable=False)
+    branch: Mapped[str] = mapped_column(String(255), nullable=False, default="main")
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    connection: Mapped["GitConnection"] = relationship(
+        "GitConnection", back_populates="git_folders"
+    )

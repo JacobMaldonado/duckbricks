@@ -48,4 +48,30 @@ def _apply_migrations(engine) -> None:
                 " ADD COLUMN IF NOT EXISTS prefect_deployment_id VARCHAR(36) NULL"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS app.git_connections ("
+                "  id SERIAL PRIMARY KEY,"
+                "  name VARCHAR(255) NOT NULL,"
+                "  provider_type VARCHAR(50) NOT NULL,"
+                "  host VARCHAR(255),"
+                "  token_encrypted BYTEA NOT NULL,"
+                "  created_at TIMESTAMP DEFAULT now(),"
+                "  updated_at TIMESTAMP DEFAULT now()"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS app.git_folders ("
+                "  id SERIAL PRIMARY KEY,"
+                "  workspace_path VARCHAR(1024) NOT NULL UNIQUE,"
+                "  git_connection_id INTEGER NOT NULL"
+                "    REFERENCES app.git_connections(id) ON DELETE CASCADE,"
+                "  repo_url VARCHAR(1024) NOT NULL,"
+                "  branch VARCHAR(255) NOT NULL DEFAULT 'main',"
+                "  created_at TIMESTAMP DEFAULT now()"
+                ")"
+            )
+        )
         conn.commit()

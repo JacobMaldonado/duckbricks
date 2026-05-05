@@ -39,7 +39,7 @@ def _strip_hop_by_hop(headers: dict) -> dict:
 
 async def proxy_ungit_http(path: str, request: Request) -> Response:
     """Forward an HTTP request to the internal Ungit service."""
-    target_url = f"{UNGIT_INTERNAL_URL}/ungit/{path}"
+    target_url = f"{UNGIT_INTERNAL_URL}/{path}"
     query_string = request.url.query
     if query_string:
         target_url = f"{target_url}?{query_string}"

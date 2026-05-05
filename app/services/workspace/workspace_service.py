@@ -15,14 +15,18 @@ class WorkspaceNode:
         path: str,
         is_dir: bool,
         children: list[WorkspaceNode] | None = None,
+        is_git_folder: bool = False,
+        git_branch: str | None = None,
     ) -> None:
         self.name = name
         self.path = path
         self.is_dir = is_dir
         self.children: list[WorkspaceNode] = children or []
+        self.is_git_folder = is_git_folder
+        self.git_branch = git_branch
 
     def __repr__(self) -> str:
-        kind = "dir" if self.is_dir else "file"
+        kind = "git-dir" if self.is_git_folder else ("dir" if self.is_dir else "file")
         return f"WorkspaceNode({kind}, {self.path!r})"
 
 
@@ -39,15 +43,19 @@ class WorkspaceService:
     def root(self) -> Path:
         return self._root
 
-    def list_tree(self) -> list[WorkspaceNode]:
-        """Return a recursive tree of WorkspaceNodes rooted at the workspace directory."""
-        return self._build_tree(self._root)
+    def list_tree(self, git_tracked_paths: set[str] | None = None) -> list[WorkspaceNode]:
+        """Return a recursive tree of WorkspaceNodes rooted at the workspace directory.
+
+        When git_tracked_paths is provided, directories whose workspace-relative
+        path is in that set are annotated as git folders.
+        """
+        return self._build_tree(self._root, git_tracked_paths or set())
 
     def list_files(self, extensions: list[str] | None = None) -> list[str]:
         """Return absolute paths for all files in the workspace, filtered by extension."""
         result: list[str] = []
         for path in sorted(self._root.rglob("*")):
-            if path.is_file():
+            if path.is_file() and path.name != ".git":
                 if extensions is None or path.suffix.lstrip(".") in extensions:
                     result.append(str(path))
         return result
@@ -142,19 +150,38 @@ class WorkspaceService:
             raise ValueError(f"Path '{relative_path}' escapes the workspace root.")
         return resolved
 
-    def _build_tree(self, directory: Path) -> list[WorkspaceNode]:
+    def _build_tree(self, directory: Path, git_tracked_paths: set[str]) -> list[WorkspaceNode]:
         nodes: list[WorkspaceNode] = []
         for child in sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+            if child.name == ".git":
+                continue
             rel = str(child.relative_to(self._root))
             if child.is_dir():
+                is_git = (child / ".git").is_dir() or rel in git_tracked_paths
+                git_branch: str | None = None
+                if is_git:
+                    git_branch = self._read_branch(child)
                 nodes.append(
                     WorkspaceNode(
                         name=child.name,
                         path=rel,
                         is_dir=True,
-                        children=self._build_tree(child),
+                        children=self._build_tree(child, git_tracked_paths),
+                        is_git_folder=is_git,
+                        git_branch=git_branch,
                     )
                 )
             elif child.suffix in self.ALLOWED_EXTENSIONS:
                 nodes.append(WorkspaceNode(name=child.name, path=rel, is_dir=False))
         return nodes
+
+    @staticmethod
+    def _read_branch(directory: Path) -> str | None:
+        """Read the active branch name from a .git/HEAD file without importing gitpython."""
+        head_file = directory / ".git" / "HEAD"
+        if not head_file.exists():
+            return None
+        content = head_file.read_text(encoding="utf-8").strip()
+        if content.startswith("ref: refs/heads/"):
+            return content[len("ref: refs/heads/") :]
+        return content[:7] if len(content) >= 7 else content

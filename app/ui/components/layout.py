@@ -40,3 +40,11 @@ def layout_frame(title: str = "DuckBricks") -> None:
                     ui.icon("folder_open").classes("text-grey-7")
                 with ui.item_section():
                     ui.label("Workspace").classes("text-grey-9 text-body2")
+
+            ui.separator().classes("q-my-xs")
+
+            with ui.item(on_click=lambda: ui.navigate.to("/settings")).props("clickable v-ripple"):
+                with ui.item_section().props("avatar"):
+                    ui.icon("settings").classes("text-grey-7")
+                with ui.item_section():
+                    ui.label("Settings").classes("text-grey-9 text-body2")

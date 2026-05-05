@@ -8,12 +8,14 @@ from pathlib import Path
 
 from nicegui import ui
 
-from app.config import MARIMO_URL, WORKSPACE_PATH
+from app.config import MARIMO_URL, UNGIT_URL, WORKSPACE_PATH
+from app.services.git.folder_service import GitFolderService
 from app.services.workspace import WorkspaceService
 from app.services.workspace.workspace_service import WorkspaceNode
 from app.ui.components.layout import layout_frame
 
 _workspace_service = WorkspaceService(WORKSPACE_PATH)
+_git_folder_service = GitFolderService(WORKSPACE_PATH)
 
 _ICON_BY_EXTENSION = {
     ".sql": ("description", "blue-7"),
@@ -102,6 +104,13 @@ body.ws-marimo-mode .ws-save-btn { display: none !important; }
 body.ws-marimo-mode .ws-edit-source-btn { display: inline-flex !important; }
 .ws-marimo-iframe { display: none; border: none; width: 100%; flex: 1; min-height: 0; }
 .ws-edit-source-btn { display: none !important; }
+
+/* Ungit iframe toggling */
+body.ws-ungit-mode .ws-codemirror-panel { display: none !important; }
+body.ws-ungit-mode .ws-ungit-iframe { display: flex !important; }
+body.ws-ungit-mode .ws-save-btn { display: none !important; }
+body.ws-ungit-mode .ws-edit-source-btn { display: inline-flex !important; }
+.ws-ungit-iframe { display: none; border: none; width: 100%; flex: 1; min-height: 0; }
 </style>
 <script>
 document.addEventListener("dragover", function(e) {
@@ -135,24 +144,47 @@ def _render_file_tree_panel() -> None:
             .classes("ws-file-tree-body q-pa-sm gap-1")
             .style("display: flex; flex-direction: column")
         ):
+            tree_container = ui.column().classes("w-full gap-0")
+
             with ui.row().classes("w-full items-center justify-between q-mb-sm"):
                 ui.label("Workspace").classes("text-weight-bold text-body2")
-                with ui.row().classes("gap-1"):
-                    ui.button(icon="create_new_folder", on_click=_open_new_folder_dialog).props(
-                        "flat dense size=sm color=amber-7"
-                    ).tooltip("New folder")
+                with ui.row().classes("gap-1 items-center"):
                     ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
                         "flat dense size=sm"
                     ).tooltip("New file")
+                    ui.button(icon="create_new_folder", on_click=_open_new_folder_dialog).props(
+                        "flat dense size=sm color=amber-7"
+                    ).tooltip("New folder")
+                    with ui.button(icon="more_vert").props("flat dense size=sm color=grey-7"):
+                        with ui.menu():
+                            ui.menu_item(
+                                "New File",
+                                on_click=_open_new_file_dialog,
+                                auto_close=True,
+                            )
+                            ui.menu_item(
+                                "New Folder",
+                                on_click=_open_new_folder_dialog,
+                                auto_close=True,
+                            )
+                            ui.separator()
+                            ui.menu_item(
+                                "New Git Folder",
+                                on_click=lambda tc=tree_container: _open_new_git_folder_dialog(tc),
+                                auto_close=True,
+                            )
 
-            tree_container = ui.column().classes("w-full gap-0")
             _refresh_tree(tree_container)
             ui.context.client.on_connect(lambda: _refresh_tree(tree_container))
 
 
 def _refresh_tree(container: ui.column) -> None:
     container.clear()
-    nodes = _workspace_service.list_tree()
+    try:
+        tracked = _git_folder_service.get_tracked_paths()
+    except Exception:
+        tracked = set()
+    nodes = _workspace_service.list_tree(git_tracked_paths=tracked)
     with container:
         if not nodes:
             ui.label("No files yet.").classes("text-caption text-grey-5 q-pa-sm")
@@ -164,8 +196,10 @@ def _refresh_tree(container: ui.column) -> None:
 def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int = 0) -> None:
     indent = depth * 16
     if node.is_dir:
+        folder_icon = "source" if node.is_git_folder else "folder"
+        folder_color = "green-8" if node.is_git_folder else "amber-7"
         with (
-            ui.expansion(node.name, icon="folder")
+            ui.expansion(node.name, icon=folder_icon)
             .classes("w-full text-body2 ws-tree-row")
             .style(f"padding-left: {indent}px")
             .props("draggable=true")
@@ -175,8 +209,17 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
         ) as expansion:
             with expansion.add_slot("header"):
                 with ui.row().classes("w-full items-center gap-1"):
-                    ui.icon("folder", color="amber-7").classes("text-sm")
+                    ui.icon(folder_icon, color=folder_color).classes("text-sm")
                     ui.label(node.name).classes("text-body2 text-grey-9")
+                    if node.is_git_folder and node.git_branch:
+                        ungit_path = urllib.parse.quote(str(Path(WORKSPACE_PATH) / node.path))
+                        ungit_frame_url = f"{UNGIT_URL}/#/repository?path={ungit_path}"
+                        ui.badge(node.git_branch, color="green-8").classes(
+                            "cursor-pointer text-xs"
+                        ).on(
+                            "click.stop",
+                            lambda url=ungit_frame_url, n=node: _activate_ungit_mode(url, n.path),
+                        ).tooltip("Click to manage git history")
                     ui.space()
                     _render_context_menu(node, tree_container)
             for child in node.children:
@@ -285,6 +328,7 @@ def _render_editor_panel() -> None:
             )
 
         ui.element("iframe").classes("ws-marimo-iframe").style("padding: 0 16px 16px")
+        ui.element("iframe").classes("ws-ungit-iframe").style("padding: 0 16px 16px")
 
         ui.context.client.storage["_ws_current_path"] = ""
         ui.context.client.storage["_ws_editor"] = editor
@@ -331,7 +375,9 @@ def _activate_marimo_mode(relative_path: str) -> None:
             drawer.on("mouseleave", _on_drawer_mouseleave)
 
     ui.run_javascript(
+        "document.body.classList.remove('ws-ungit-mode');"
         "document.body.classList.add('ws-marimo-mode');"
+        f"document.querySelector('.ws-ungit-iframe').src = '';"
         f"var iframe = document.querySelector('.ws-marimo-iframe');"
         f"if (iframe) iframe.src = '{marimo_file_url}';"
     )
@@ -347,8 +393,9 @@ def _deactivate_marimo_mode() -> None:
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"
-        "var iframe = document.querySelector('.ws-marimo-iframe');"
-        "if (iframe) iframe.src = '';"
+        "document.body.classList.remove('ws-ungit-mode');"
+        "document.querySelector('.ws-marimo-iframe').src = '';"
+        "document.querySelector('.ws-ungit-iframe').src = '';"
     )
 
     relative_path: str = storage.get("_ws_current_path", "")
@@ -372,6 +419,22 @@ def _deactivate_marimo_mode() -> None:
 
     if label:
         label.set_text(relative_path)
+
+
+def _activate_ungit_mode(ungit_url: str, folder_path: str) -> None:
+    storage = ui.context.client.storage
+    storage["_ws_current_path"] = folder_path
+
+    label: ui.label = storage.get("_ws_label")
+    if label:
+        label.set_text(folder_path)
+
+    ui.run_javascript(
+        "document.body.classList.remove('ws-marimo-mode');"
+        "document.body.classList.add('ws-ungit-mode');"
+        "document.querySelector('.ws-marimo-iframe').src = '';"
+        f"document.querySelector('.ws-ungit-iframe').src = '{ungit_url}';"
+    )
 
 
 def _open_file_in_editor(relative_path: str) -> None:
@@ -593,3 +656,91 @@ def _create_folder(relative_path: str, dialog) -> None:
         ui.navigate.to("/workspace")
     except Exception as exc:
         ui.notification(f"Error: {exc}", type="negative")
+
+
+def _open_new_git_folder_dialog(tree_container: ui.column) -> None:
+    from app.services.git.connection_service import GitConnectionService
+    from app.services.git.providers.base import Repository
+
+    connection_service = GitConnectionService()
+
+    with ui.dialog() as dialog, ui.card().style("min-width: 480px"):
+        ui.label("New Git Folder").classes("text-h6")
+
+        connections = connection_service.list_all()
+        if not connections:
+            ui.label("No git connections configured.").classes("text-grey-6")
+            ui.label("Add a connection in Settings first.").classes("text-caption text-grey-5")
+            with ui.row().classes("justify-end q-mt-md"):
+                ui.button("Go to Settings", on_click=lambda: ui.navigate.to("/settings")).props(
+                    "color=primary"
+                )
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+            dialog.open()
+            return
+
+        connection_options = {str(c.id): f"{c.name} ({c.provider_type})" for c in connections}
+        connection_select = ui.select(
+            options=connection_options,
+            label="Git Connection",
+        ).classes("w-full")
+
+        repos_state: dict[str, list[Repository]] = {"items": []}
+        repo_select = ui.select(options={}, label="Repository").classes("w-full")
+        branch_input = ui.input("Branch", value="main").classes("w-full")
+        folder_input = ui.input("Folder name in workspace", placeholder="my-repo").classes("w-full")
+
+        def load_repos() -> None:
+            if not connection_select.value:
+                return
+            try:
+                repos = connection_service.list_repositories(int(connection_select.value))
+                repos_state["items"] = repos
+                repo_select.options = {r.clone_url: r.full_name for r in repos}
+                repo_select.update()
+            except Exception as exc:
+                ui.notification(f"Could not load repositories: {exc}", type="negative")
+
+        connection_select.on("update:model-value", lambda _: load_repos())
+
+        with ui.row().classes("justify-end gap-2 q-mt-md"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button(
+                "Clone & Create",
+                on_click=lambda: _create_git_folder(
+                    folder_input.value,
+                    connection_select.value,
+                    repo_select.value,
+                    branch_input.value,
+                    dialog,
+                    tree_container,
+                ),
+            ).props("color=primary")
+    dialog.open()
+
+
+def _create_git_folder(
+    folder_name: str,
+    connection_id_str: str,
+    repo_url: str,
+    branch: str,
+    dialog,
+    tree_container: ui.column,
+) -> None:
+    folder_name = folder_name.strip()
+    branch = branch.strip() or "main"
+    if not folder_name or not connection_id_str or not repo_url:
+        ui.notification("All fields are required.", type="warning")
+        return
+    try:
+        _git_folder_service.create(
+            folder_name=folder_name,
+            git_connection_id=int(connection_id_str),
+            repo_url=repo_url,
+            branch=branch,
+        )
+        dialog.close()
+        ui.notification(f"Git folder '{folder_name}' cloned successfully.", type="positive")
+        _refresh_tree(tree_container)
+    except Exception as exc:
+        ui.notification(f"Clone failed: {exc}", type="negative")

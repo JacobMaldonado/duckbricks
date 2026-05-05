@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
-from time import monotonic
 from typing import Any
 from uuid import UUID
 
@@ -12,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from app.services.database.models.app import Job, JobTask
 from app.services.database.session import get_session
-from app.services.jobs.executors import ExecutorRegistry
 from app.services.prefect import prefect_client
 
 _log = logging.getLogger(__name__)
@@ -165,28 +163,23 @@ class JobService:
             _log.warning("Could not fetch run history for job %d: %s", job_id, exc)
             return []
 
-    def execute_job_tasks(self, job_id: int) -> None:
-        """Run all tasks for a job sequentially.
-
-        This method is called by the Prefect worker via run_job_flow(). It
-        performs direct task execution without interacting with Prefect, so
-        the worker avoids triggering a recursive deployment loop.
-        """
+    def get_task_snapshots(self, job_id: int) -> list[dict[str, Any]]:
+        """Return ordered task snapshots for a job, ready for Prefect task execution."""
         with get_session() as session:
             job = session.query(Job).filter(Job.id == job_id).first()
             if not job:
                 raise ValueError(f"Job {job_id} not found")
-            task_snapshots = [
+            return [
                 {
                     "id": t.id,
+                    "name": t.name,
                     "executor_type": t.executor_type,
                     "content": t.content,
                     "file_path": t.file_path,
                     "position": t.position,
                 }
-                for t in job.tasks
+                for t in sorted(job.tasks, key=lambda t: t.position)
             ]
-        self._execute_tasks(task_snapshots)
 
     def _register_deployment(self, job: Job) -> None:
         try:
@@ -208,36 +201,6 @@ class JobService:
             _run_prefect(prefect_client.update_deployment(deployment_id, job))
         except Exception as exc:
             _log.warning("Could not update Prefect deployment %s: %s", deployment_id, exc)
-
-    def _execute_tasks(self, task_snapshots: list[dict[str, Any]]) -> None:
-        for snapshot in sorted(task_snapshots, key=lambda t: t["position"]):
-            content = self._resolve_task_content(snapshot)
-            file_path: str | None = snapshot.get("file_path")
-            start = monotonic()
-            executor = ExecutorRegistry.resolve(snapshot["executor_type"])
-            result = executor.execute(content, {}, file_path=file_path)
-            duration_ms = int((monotonic() - start) * 1000)
-            status = result.get("status", "error")
-            _log.info(
-                "Task %d finished in %dms with status=%s", snapshot["id"], duration_ms, status
-            )
-            if status == "error":
-                raise RuntimeError(
-                    f"Task {snapshot['id']} ({snapshot.get('name', '')}) failed: "
-                    f"{result.get('output', 'unknown error')}"
-                )
-
-    def _resolve_task_content(self, snapshot: dict[str, Any]) -> str:
-        """Return inline content or read from file_path if one is set."""
-        file_path: str | None = snapshot.get("file_path")
-        if not file_path:
-            content: str = snapshot.get("content", "")
-            return content
-        try:
-            with open(file_path) as fh:
-                return fh.read()
-        except OSError as exc:
-            raise ValueError(f"Cannot read task file '{file_path}': {exc}") from exc
 
     def _detach(self, instance: Any, session: Session) -> Any:
         session.expunge(instance)

@@ -119,6 +119,60 @@ class TestWorkspaceServiceClone:
             workspace.clone("nonexistent.sql")
 
 
+class TestWorkspaceServiceGitDetection:
+    def test_git_folder_detected_by_git_directory(self, workspace):
+        workspace.create_folder("my-repo")
+        (workspace.root / "my-repo" / ".git").mkdir()
+        (workspace.root / "my-repo" / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+        nodes = workspace.list_tree()
+        repo_node = next((n for n in nodes if n.name == "my-repo"), None)
+        assert repo_node is not None
+        assert repo_node.is_git_folder is True
+        assert repo_node.git_branch == "main"
+
+    def test_git_dot_directory_is_excluded_from_tree(self, workspace):
+        workspace.create_folder("my-repo")
+        (workspace.root / "my-repo" / ".git").mkdir()
+        (workspace.root / "my-repo" / ".git" / "HEAD").write_text("ref: refs/heads/main\n")
+        workspace.write_file("my-repo/README.md", "# Hello")
+        nodes = workspace.list_tree()
+        repo_node = next((n for n in nodes if n.name == "my-repo"), None)
+        assert repo_node is not None
+        child_names = {c.name for c in repo_node.children}
+        assert ".git" not in child_names
+        assert "README.md" in child_names
+
+    def test_read_branch_from_head_file(self, workspace, tmp_path):
+        git_dir = tmp_path / "repo" / ".git"
+        git_dir.mkdir(parents=True)
+        (git_dir / "HEAD").write_text("ref: refs/heads/feature/new-ui\n")
+        branch = WorkspaceService._read_branch(tmp_path / "repo")
+        assert branch == "feature/new-ui"
+
+    def test_read_branch_from_detached_head(self, workspace, tmp_path):
+        git_dir = tmp_path / "repo" / ".git"
+        git_dir.mkdir(parents=True)
+        sha = "abc1234567890"
+        (git_dir / "HEAD").write_text(sha + "\n")
+        branch = WorkspaceService._read_branch(tmp_path / "repo")
+        assert branch == sha[:7]
+
+    def test_non_git_folder_has_no_branch(self, workspace):
+        workspace.create_folder("plain-folder")
+        nodes = workspace.list_tree()
+        folder_node = next((n for n in nodes if n.name == "plain-folder"), None)
+        assert folder_node is not None
+        assert folder_node.is_git_folder is False
+        assert folder_node.git_branch is None
+
+    def test_git_tracked_paths_mark_as_git_folder(self, workspace):
+        workspace.create_folder("tracked-repo")
+        nodes = workspace.list_tree(git_tracked_paths={"tracked-repo"})
+        repo_node = next((n for n in nodes if n.name == "tracked-repo"), None)
+        assert repo_node is not None
+        assert repo_node.is_git_folder is True
+
+
 class TestWorkspaceServiceMove:
     def test_move_file_into_folder(self, workspace):
         workspace.write_file("query.sql", "SELECT 1")

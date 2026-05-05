@@ -195,8 +195,14 @@ def _open_deployment_details(job: Job) -> None:
     _open_prefect_iframe_dialog(f"Deployment — {job.name}", proxy_path, external_url)
 
 
+_PAGE_SIZE = 10
+
+
 def _open_run_history(job: Job) -> None:
     runs = _job_service.list_executions(job.id)
+    page_index = {"value": 0}
+    total_pages = max(1, -(-len(runs) // _PAGE_SIZE))  # ceiling division
+
     with ui.dialog() as dialog, ui.card().classes("w-full").style("min-width: 640px"):
         with ui.row().classes("w-full items-center justify-between q-mb-md"):
             ui.label(f"Run History — {job.name}").classes("text-h6")
@@ -205,8 +211,40 @@ def _open_run_history(job: Job) -> None:
         if not runs:
             ui.label("No runs yet.").classes("text-grey-6")
         else:
-            for run in runs:
-                _render_flow_run_row(run, dialog)
+            rows_container = ui.column().classes("w-full gap-1")
+            page_label = ui.label("").classes("text-caption text-grey-6 self-center")
+
+            def render_page() -> None:
+                rows_container.clear()
+                start = page_index["value"] * _PAGE_SIZE
+                page_runs = runs[start : start + _PAGE_SIZE]
+                with rows_container:
+                    for run in page_runs:
+                        _render_flow_run_row(run, dialog)
+                page_label.set_text(
+                    f"Page {page_index['value'] + 1} of {total_pages}" f"  ({len(runs)} runs total)"
+                )
+                prev_btn.props("disabled" if page_index["value"] == 0 else "")
+                next_btn.props("disabled" if page_index["value"] >= total_pages - 1 else "")
+
+            def go_prev() -> None:
+                page_index["value"] -= 1
+                render_page()
+
+            def go_next() -> None:
+                page_index["value"] += 1
+                render_page()
+
+            with ui.row().classes("w-full items-center justify-between q-mt-sm"):
+                prev_btn = ui.button(icon="chevron_left", on_click=go_prev).props(
+                    "flat dense disabled"
+                )
+                page_label
+                next_btn = ui.button(icon="chevron_right", on_click=go_next).props(
+                    "flat dense" + (" disabled" if total_pages <= 1 else "")
+                )
+
+            render_page()
     dialog.open()
 
 

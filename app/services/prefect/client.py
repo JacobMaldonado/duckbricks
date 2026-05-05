@@ -10,9 +10,16 @@ from prefect.client.schemas.actions import (
     DeploymentUpdate,
     WorkPoolCreate,
 )
-from prefect.client.schemas.filters import DeploymentFilter, DeploymentFilterId
+from prefect.client.schemas.filters import (
+    DeploymentFilter,
+    DeploymentFilterId,
+    FlowRunFilter,
+    FlowRunFilterState,
+    FlowRunFilterStateType,
+)
 from prefect.client.schemas.objects import FlowRun
 from prefect.client.schemas.schedules import CronSchedule
+from prefect.client.schemas.sorting import FlowRunSort
 
 from app.config import PREFECT_EXTERNAL_URL
 
@@ -111,11 +118,28 @@ class PrefectApiClient:
             _log.info("Triggered flow run %s for deployment %s.", run.id, deployment_id)
             return run
 
-    async def list_runs(self, deployment_id: UUID, limit: int = 50) -> list[FlowRun]:
-        """Return the most recent flow runs for a deployment, newest first."""
+    async def list_runs(self, deployment_id: UUID, limit: int = 200) -> list[FlowRun]:
+        """Return flow runs for a deployment, newest first, excluding scheduled runs."""
         async with get_client() as client:
             runs: list[FlowRun] = await client.read_flow_runs(
                 deployment_filter=DeploymentFilter(id=DeploymentFilterId(any_=[deployment_id])),
+                flow_run_filter=FlowRunFilter(
+                    state=FlowRunFilterState(
+                        type=FlowRunFilterStateType(
+                            any_=[
+                                "PENDING",
+                                "RUNNING",
+                                "COMPLETED",
+                                "FAILED",
+                                "CANCELLED",
+                                "CRASHED",
+                                "PAUSED",
+                                "CANCELLING",
+                            ]
+                        )
+                    )
+                ),
+                sort=FlowRunSort.START_TIME_DESC,
                 limit=limit,
             )
             return runs

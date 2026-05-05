@@ -9,6 +9,7 @@ from nicegui import app, ui
 
 from app.api.marimo_proxy import proxy_http_request, proxy_websocket
 from app.api.prefect_proxy import proxy_prefect_http
+from app.api.ungit_proxy import proxy_ungit_http
 from app.config import HELPERS_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
@@ -18,6 +19,7 @@ from app.ui.pages.explorer import explorer_page
 from app.ui.pages.job_execution import job_execution_page
 from app.ui.pages.jobs import jobs_page
 from app.ui.pages.query import query_workspace
+from app.ui.pages.settings import settings_page
 from app.ui.pages.workspace import workspace_page
 
 logging.basicConfig(
@@ -72,6 +74,12 @@ async def marimo_http_proxy(path: str, request: Request):
     return await proxy_http_request(path, request)
 
 
+@app.api_route("/ungit/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"])
+async def ungit_http_proxy(path: str, request: Request):
+    """Reverse-proxy HTTP requests to the internal Ungit service."""
+    return await proxy_ungit_http(path, request)
+
+
 @app.websocket("/marimo/{path:path}")
 async def marimo_ws_proxy(path: str, client_ws: WebSocket) -> None:
     """Reverse-proxy WebSocket connections to the internal Marimo service."""
@@ -118,6 +126,12 @@ def job_execution(execution_id: int):
 def workspace():
     """Workspace file manager."""
     workspace_page()
+
+
+@ui.page("/settings")
+def settings():
+    """Application settings and configuration."""
+    settings_page()
 
 
 if __name__ in {"__main__", "__mp_main__"}:

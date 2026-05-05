@@ -40,3 +40,8 @@ MARIMO_INTERNAL_URL: str = os.getenv("MARIMO_INTERNAL_URL", "http://localhost:27
 PREFECT_INTERNAL_URL: str = os.getenv("PREFECT_INTERNAL_URL", "http://localhost:4200")
 PREFECT_EXTERNAL_URL: str = os.getenv("PREFECT_EXTERNAL_URL", "http://localhost:4200")
 PREFECT_UI_BASE_PATH: str = "/prefect-ui"
+
+SECRET_KEY: str = os.getenv("DUCKBRICKS_SECRET_KEY", "")
+
+UNGIT_URL: str = os.getenv("UNGIT_URL", "/ungit")
+UNGIT_INTERNAL_URL: str = os.getenv("UNGIT_INTERNAL_URL", "http://localhost:8448")

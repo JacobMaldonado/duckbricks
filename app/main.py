@@ -9,7 +9,6 @@ from nicegui import app, ui
 
 from app.api.marimo_proxy import proxy_http_request, proxy_websocket
 from app.api.prefect_proxy import proxy_prefect_http
-from app.api.ungit_proxy import proxy_ungit_http
 from app.config import HELPERS_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
@@ -72,12 +71,6 @@ async def prefect_http_proxy(path: str, request: Request):
 async def marimo_http_proxy(path: str, request: Request):
     """Reverse-proxy HTTP requests to the internal Marimo service."""
     return await proxy_http_request(path, request)
-
-
-@app.api_route("/ungit/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"])
-async def ungit_http_proxy(path: str, request: Request):
-    """Reverse-proxy HTTP requests to the internal Ungit service."""
-    return await proxy_ungit_http(path, request)
 
 
 @app.websocket("/marimo/{path:path}")

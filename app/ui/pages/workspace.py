@@ -8,7 +8,7 @@ from pathlib import Path
 
 from nicegui import ui
 
-from app.config import MARIMO_URL, UNGIT_URL, WORKSPACE_PATH
+from app.config import MARIMO_URL, WORKSPACE_PATH
 from app.services.git.folder_service import GitFolderService
 from app.services.workspace import WorkspaceService
 from app.services.workspace.workspace_service import WorkspaceNode
@@ -104,13 +104,6 @@ body.ws-marimo-mode .ws-save-btn { display: none !important; }
 body.ws-marimo-mode .ws-edit-source-btn { display: inline-flex !important; }
 .ws-marimo-iframe { display: none; border: none; width: 100%; flex: 1; min-height: 0; }
 .ws-edit-source-btn { display: none !important; }
-
-/* Ungit iframe toggling */
-body.ws-ungit-mode .ws-codemirror-panel { display: none !important; }
-body.ws-ungit-mode .ws-ungit-iframe { display: flex !important; }
-body.ws-ungit-mode .ws-save-btn { display: none !important; }
-body.ws-ungit-mode .ws-edit-source-btn { display: inline-flex !important; }
-.ws-ungit-iframe { display: none; border: none; width: 100%; flex: 1; min-height: 0; }
 </style>
 <script>
 document.addEventListener("dragover", function(e) {
@@ -212,14 +205,12 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
                     ui.icon(folder_icon, color=folder_color).classes("text-sm")
                     ui.label(node.name).classes("text-body2 text-grey-9")
                     if node.is_git_folder and node.git_branch:
-                        ungit_path = urllib.parse.quote(str(Path(WORKSPACE_PATH) / node.path))
-                        ungit_frame_url = f"{UNGIT_URL}/#/repository?path={ungit_path}"
                         ui.badge(node.git_branch, color="green-8").classes(
                             "cursor-pointer text-xs"
                         ).on(
                             "click.stop",
-                            lambda url=ungit_frame_url, n=node: _activate_ungit_mode(url, n.path),
-                        ).tooltip("Click to manage git history")
+                            lambda n=node: _open_git_dialog(n.path),
+                        ).tooltip("Click to manage git repository")
                     ui.space()
                     _render_context_menu(node, tree_container)
             for child in node.children:
@@ -328,7 +319,6 @@ def _render_editor_panel() -> None:
             )
 
         ui.element("iframe").classes("ws-marimo-iframe").style("padding: 0 16px 16px")
-        ui.element("iframe").classes("ws-ungit-iframe").style("padding: 0 16px 16px")
 
         ui.context.client.storage["_ws_current_path"] = ""
         ui.context.client.storage["_ws_editor"] = editor
@@ -375,9 +365,7 @@ def _activate_marimo_mode(relative_path: str) -> None:
             drawer.on("mouseleave", _on_drawer_mouseleave)
 
     ui.run_javascript(
-        "document.body.classList.remove('ws-ungit-mode');"
         "document.body.classList.add('ws-marimo-mode');"
-        f"document.querySelector('.ws-ungit-iframe').src = '';"
         f"var iframe = document.querySelector('.ws-marimo-iframe');"
         f"if (iframe) iframe.src = '{marimo_file_url}';"
     )
@@ -393,9 +381,7 @@ def _deactivate_marimo_mode() -> None:
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"
-        "document.body.classList.remove('ws-ungit-mode');"
         "document.querySelector('.ws-marimo-iframe').src = '';"
-        "document.querySelector('.ws-ungit-iframe').src = '';"
     )
 
     relative_path: str = storage.get("_ws_current_path", "")
@@ -421,20 +407,11 @@ def _deactivate_marimo_mode() -> None:
         label.set_text(relative_path)
 
 
-def _activate_ungit_mode(ungit_url: str, folder_path: str) -> None:
-    storage = ui.context.client.storage
-    storage["_ws_current_path"] = folder_path
+def _open_git_dialog(workspace_path: str) -> None:
+    """Open the custom Git management dialog for the given workspace-relative path."""
+    from app.ui.components.git_dialog import GitFolderDialog  # noqa: PLC0415
 
-    label: ui.label = storage.get("_ws_label")
-    if label:
-        label.set_text(folder_path)
-
-    ui.run_javascript(
-        "document.body.classList.remove('ws-marimo-mode');"
-        "document.body.classList.add('ws-ungit-mode');"
-        "document.querySelector('.ws-marimo-iframe').src = '';"
-        f"document.querySelector('.ws-ungit-iframe').src = '{ungit_url}';"
-    )
+    GitFolderDialog(workspace_path).open()
 
 
 def _open_file_in_editor(relative_path: str) -> None:

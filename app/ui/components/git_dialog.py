@@ -38,7 +38,7 @@ class GitFolderDialog:
 
         self._dialog: ui.dialog | None = None
         self._files_container: ui.column | None = None
-        self._diff_editor: ui.codemirror | None = None
+        self._diff_panel: ui.element | None = None
         self._branch_select: ui.select | None = None
         self._commit_input: ui.textarea | None = None
 
@@ -58,15 +58,13 @@ class GitFolderDialog:
                         self._files_container = ui.column().classes("w-full gap-1")
                         self._render_commit_footer()
                     with ui.element("div").classes("git-diff-panel q-pa-sm").style("flex: 1"):
-                        self._diff_editor = (
-                            ui.codemirror(
-                                value="← Select a file to view its diff",
-                                language="diff",
-                                theme="githubLight",
-                            )
-                            .classes("w-full h-full")
-                            .disable()
+                        self._diff_panel = ui.element("div").classes(
+                            "w-full h-full relative-position"
                         )
+                        with self._diff_panel:
+                            ui.label("← Select a file to view its diff").classes(
+                                "absolute-center text-grey-5 text-body2"
+                            )
         dialog.open()
         self._reload()
 
@@ -201,13 +199,19 @@ class GitFolderDialog:
 
     def _show_diff(self, file_path: str) -> None:
         self._active_diff_path = file_path
-        if self._diff_editor is None:
+        if self._diff_panel is None:
             return
         try:
             diff_text = self._service.get_diff(self._workspace_path, file_path)
         except Exception as exc:
             diff_text = f"(error loading diff: {exc})"
-        self._diff_editor.set_value(diff_text)
+        self._diff_panel.clear()
+        with self._diff_panel:
+            (
+                ui.codemirror(value=diff_text, language="diff", theme="githubLight")
+                .classes("w-full h-full")
+                .disable()
+            )
         self._refresh_files()
 
     def _on_branch_change(self, event: object) -> None:
@@ -256,8 +260,12 @@ class GitFolderDialog:
             self._selected_files.discard(changed_file.path)
             if self._active_diff_path == changed_file.path:
                 self._active_diff_path = None
-                if self._diff_editor:
-                    self._diff_editor.set_value("← Select a file to view its diff")
+                if self._diff_panel:
+                    self._diff_panel.clear()
+                    with self._diff_panel:
+                        ui.label("← Select a file to view its diff").classes(
+                            "absolute-center text-grey-5 text-body2"
+                        )
             self._reload()
         except Exception as exc:
             ui.notification(f"Discard failed: {exc}", type="negative")

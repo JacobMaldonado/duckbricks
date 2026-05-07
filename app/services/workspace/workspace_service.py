@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-_MARIMO_CONFIG_FILENAME = "marimo.toml"
+_MARIMO_CONFIG_FILENAME = ".marimo.toml"
 
 _MARIMO_DEFAULT_CONFIG = """\
 [save]

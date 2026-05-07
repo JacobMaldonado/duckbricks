@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import git as gitpython
 from git import InvalidGitRepositoryError, Repo
@@ -35,7 +36,9 @@ class GitOperationsService:
             files.append(ChangedFile(path=item.a_path, status="modified", is_staged=False))
 
         for item in repo.index.diff("HEAD"):
-            files.append(ChangedFile(path=item.a_path, status=self._staged_status(item), is_staged=True))
+            files.append(
+                ChangedFile(path=item.a_path, status=self._staged_status(item), is_staged=True)
+            )
 
         for item in repo.untracked_files:
             files.append(ChangedFile(path=item, status="untracked", is_staged=False))
@@ -61,11 +64,15 @@ class GitOperationsService:
         """Return all local and remote branch names, deduplicated and sorted."""
         repo = self._open_repo(folder_path)
         local = [head.name for head in repo.heads]
-        remote = [
-            ref.name.removeprefix("origin/")
-            for ref in repo.remote().refs
-            if not ref.name.endswith("/HEAD")
-        ] if self._has_upstream(repo) else []
+        remote = (
+            [
+                ref.name.removeprefix("origin/")
+                for ref in repo.remote().refs
+                if not ref.name.endswith("/HEAD")
+            ]
+            if self._has_upstream(repo)
+            else []
+        )
         return sorted(set(local + remote))
 
     def checkout_branch(self, folder_path: str, branch: str, create: bool = False) -> None:
@@ -165,8 +172,8 @@ class GitOperationsService:
     def _build_authenticated_url(self, folder_path: str, repo: Repo) -> str | None:
         """Look up the stored PAT for this folder and inject it into the remote URL."""
         try:
-            from app.services.database.session import get_session  # noqa: PLC0415
             from app.services.database.models.app import GitFolder  # noqa: PLC0415
+            from app.services.database.session import get_session  # noqa: PLC0415
             from app.services.git.connection_service import GitConnectionService  # noqa: PLC0415
             from app.services.git.encryption import TokenEncryptor  # noqa: PLC0415
 
@@ -183,9 +190,21 @@ class GitOperationsService:
             token = TokenEncryptor.decrypt(connection.token_encrypted)
 
             origin_url: str = repo.remotes.origin.url
-            if origin_url.startswith("https://"):
-                return origin_url.replace("https://", f"https://oauth2:{token}@", 1)
-            return None
+            return self._inject_token(origin_url, token)
         except Exception as exc:
             _log.debug("Could not build authenticated URL for '%s': %s", folder_path, exc)
             return None
+
+    @staticmethod
+    def _inject_token(url: str, token: str) -> str | None:
+        """Return the URL with oauth2 credentials injected, stripping any existing ones.
+
+        Uses urllib.parse so that a remote URL already containing credentials
+        (e.g. cloned with a PAT) is safely overwritten rather than doubled up.
+        """
+        parsed = urlparse(url)
+        if parsed.scheme not in ("https", "http"):
+            return None
+        authed = parsed._replace(netloc=f"oauth2:{token}@{parsed.hostname}")
+        result: str = urlunparse(authed)
+        return result

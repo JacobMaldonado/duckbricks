@@ -19,7 +19,8 @@ _GIT_DIALOG_CSS = """
 .git-file-row { cursor: pointer; border-radius: 4px; padding: 4px 8px; }
 .git-file-row:hover { background: #e3f2fd; }
 .git-file-row.selected { background: #bbdefb; }
-.git-diff-code { font-family: monospace; font-size: 12px; white-space: pre; line-height: 1.5; padding: 12px; }
+.git-diff-code { font-family: monospace; font-size: 12px; white-space: pre;
+                 line-height: 1.5; padding: 12px; }
 .git-diff-add { background: #e8f5e9; color: #2e7d32; }
 .git-diff-del { background: #ffebee; color: #c62828; }
 .git-diff-hunk { background: #e3f2fd; color: #1565c0; }
@@ -50,7 +51,11 @@ class GitFolderDialog:
             self._dialog = dialog
             with ui.card().classes("w-full h-full q-pa-none").style("overflow: hidden"):
                 self._render_header()
-                with ui.row().classes("w-full gap-0").style("flex: 1; min-height: 0; overflow: hidden"):
+                with (
+                    ui.row()
+                    .classes("w-full gap-0")
+                    .style("flex: 1; min-height: 0; overflow: hidden")
+                ):
                     with ui.column().classes("git-files-panel q-pa-sm").style("width: 40%"):
                         self._files_container = ui.column().classes("w-full gap-1")
                         self._render_commit_footer()
@@ -60,15 +65,23 @@ class GitFolderDialog:
         self._reload()
 
     def _render_header(self) -> None:
-        with ui.row().classes("w-full items-center q-px-md q-py-sm bg-grey-2 gap-2").style("flex-shrink: 0"):
+        with (
+            ui.row()
+            .classes("w-full items-center q-px-md q-py-sm bg-grey-2 gap-2")
+            .style("flex-shrink: 0")
+        ):
             ui.label(f"Git — {self._workspace_path}").classes("text-weight-bold text-body1")
             ui.space()
 
-            self._branch_select = ui.select(
-                options=[],
-                label="Branch",
-                on_change=self._on_branch_change,
-            ).props("dense outlined").style("min-width: 180px")
+            self._branch_select = (
+                ui.select(
+                    options=[],
+                    label="Branch",
+                    on_change=self._on_branch_change,
+                )
+                .props("dense outlined")
+                .style("min-width: 180px")
+            )
 
             ui.button(
                 icon="add",
@@ -86,10 +99,14 @@ class GitFolderDialog:
     def _render_commit_footer(self) -> None:
         with ui.column().classes("w-full q-mt-sm gap-1"):
             ui.separator()
-            self._commit_input = ui.textarea(
-                label="Commit message",
-                placeholder="Describe your changes…",
-            ).classes("w-full").props("outlined dense rows=2")
+            self._commit_input = (
+                ui.textarea(
+                    label="Commit message",
+                    placeholder="Describe your changes…",
+                )
+                .classes("w-full")
+                .props("outlined dense rows=2")
+            )
             ui.button(
                 "Commit & Push",
                 icon="cloud_upload",
@@ -124,7 +141,9 @@ class GitFolderDialog:
         self._files_container.clear()
         with self._files_container:
             if not self._status.changed_files:
-                ui.label("No changes — working tree clean.").classes("text-caption text-grey-5 q-pa-sm")
+                ui.label("No changes — working tree clean.").classes(
+                    "text-caption text-grey-5 q-pa-sm"
+                )
                 return
             staged = [f for f in self._status.changed_files if f.is_staged]
             unstaged = [f for f in self._status.changed_files if not f.is_staged]
@@ -143,8 +162,10 @@ class GitFolderDialog:
         if self._active_diff_path == changed_file.path:
             row_classes += " selected"
 
-        with ui.row().classes(row_classes).on(
-            "click", lambda f=changed_file: self._show_diff(f.path)
+        with (
+            ui.row()
+            .classes(row_classes)
+            .on("click", lambda f=changed_file: self._show_diff(f.path))
         ):
             ui.checkbox(
                 value=is_selected,

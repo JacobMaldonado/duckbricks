@@ -11,7 +11,13 @@ from app.services.git.models import ChangedFile, GitStatus
 from app.services.git.operations_service import GitOperationsService
 
 
-def _make_diff_item(path: str = "file.py", *, new_file: bool = False, deleted_file: bool = False, renamed_file: bool = False) -> MagicMock:
+def _make_diff_item(
+    path: str = "file.py",
+    *,
+    new_file: bool = False,
+    deleted_file: bool = False,
+    renamed_file: bool = False,
+) -> MagicMock:
     item = MagicMock()
     item.a_path = path
     item.new_file = new_file
@@ -223,3 +229,29 @@ class TestChangedFileModel:
             color = ChangedFile("f.py", status, False).status_color
             assert isinstance(color, str)
             assert color  # non-empty
+
+
+class TestBuildAuthenticatedUrl:
+    """Verify that credential injection never produces double-credential URLs."""
+
+    def test_injects_token_into_clean_url(self):
+        result = GitOperationsService._inject_token("https://github.com/user/repo.git", "TOKEN123")
+        assert result == "https://oauth2:TOKEN123@github.com/user/repo.git"
+
+    def test_replaces_existing_credentials_without_doubling(self):
+        result = GitOperationsService._inject_token(
+            "https://oauth2:OLD_TOKEN@github.com/user/repo.git", "NEW_TOKEN"
+        )
+        assert result is not None
+        assert result.count("@") == 1, "URL must contain exactly one @ separator"
+        assert "NEW_TOKEN" in result
+        assert "OLD_TOKEN" not in result
+
+    def test_returns_none_for_ssh_url(self):
+        result = GitOperationsService._inject_token("git@github.com:user/repo.git", "TOKEN")
+        assert result is None
+
+    def test_preserves_path(self):
+        result = GitOperationsService._inject_token("https://github.com/org/my-repo.git", "ABC")
+        assert result is not None
+        assert "/org/my-repo.git" in result

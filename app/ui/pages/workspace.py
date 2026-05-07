@@ -193,9 +193,9 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
         folder_color = "green-8" if node.is_git_folder else "amber-7"
         with (
             ui.expansion(node.name, icon=folder_icon)
-            .classes("w-full text-body2 ws-tree-row")
+            .classes("w-full text-body2 ws-tree-row gap-0")
             .style(f"padding-left: {indent}px")
-            .props("dense draggable=true content-class=gap-0")
+            .props("dense draggable=true")
             .on("dragstart", lambda n=node: _on_dragstart(n.path))
             .on("dragover", lambda e: None)
             .on("drop", lambda n=node, c=tree_container: _on_drop(n.path, c, is_dir=True))

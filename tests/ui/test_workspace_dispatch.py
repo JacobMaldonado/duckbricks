@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 
 class TestPythonFileDetection:
     """Verify that the marimo-header check works correctly."""
@@ -24,13 +22,15 @@ class TestPythonFileDetection:
             "# /// script\n"
             "import marimo\n"
             "\n"
-            "__generated_with = \"0.10.0\"\n"
+            '__generated_with = "0.10.0"\n'
             "app = marimo.App()\n"
         )
         assert "import marimo" in template
 
     def test_template_prepended_marks_file_as_marimo(self):
-        template = "import marimo\n\napp = marimo.App()\n\n\nif __name__ == '__main__':\n    app.run()\n"
+        template = (
+            "import marimo\n\napp = marimo.App()\n\n\nif __name__ == '__main__':\n    app.run()\n"
+        )
         original = "x = 1\n"
         combined = template + original
         assert "import marimo" in combined
@@ -47,15 +47,6 @@ class TestMarimoConvertDispatch:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stderr="")
-
-            import subprocess
-
-            result = subprocess.run(
-                ["marimo", "convert", str(abs_input), "-o", str(abs_output)],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
 
             mock_run.assert_called_once()
             call_args = mock_run.call_args[0][0]

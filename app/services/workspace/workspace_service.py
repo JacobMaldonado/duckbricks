@@ -5,6 +5,15 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+_MARIMO_CONFIG_FILENAME = "marimo.toml"
+
+_MARIMO_DEFAULT_CONFIG = """\
+[save]
+autosave = "after_delay"
+autosave_delay = 1000
+format_on_save = false
+"""
+
 
 class WorkspaceNode:
     """Represents a file or folder entry in the workspace tree."""
@@ -38,6 +47,13 @@ class WorkspaceService:
     def __init__(self, root_path: str) -> None:
         self._root = Path(root_path).resolve()
         self._root.mkdir(parents=True, exist_ok=True)
+        self.ensure_marimo_config()
+
+    def ensure_marimo_config(self) -> None:
+        """Write the default marimo.toml into the workspace root if not already present."""
+        config_path = self._root / _MARIMO_CONFIG_FILENAME
+        if not config_path.exists():
+            config_path.write_text(_MARIMO_DEFAULT_CONFIG, encoding="utf-8")
 
     @property
     def root(self) -> Path:

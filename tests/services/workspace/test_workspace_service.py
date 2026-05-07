@@ -197,3 +197,30 @@ class TestWorkspaceServiceMove:
         workspace.write_file("archive/query.sql", "SELECT 2")
         with pytest.raises(ValueError, match="already exists"):
             workspace.move("query.sql", "archive")
+
+
+class TestWorkspaceServiceMarimoConfig:
+    def test_marimo_config_created_on_init(self, tmp_path):
+        WorkspaceService(str(tmp_path))
+        config_path = tmp_path / "marimo.toml"
+        assert config_path.exists()
+
+    def test_marimo_config_contains_expected_sections(self, tmp_path):
+        WorkspaceService(str(tmp_path))
+        content = (tmp_path / "marimo.toml").read_text()
+        assert "[save]" in content
+        assert "autosave" in content
+        assert "autosave_delay" in content
+        assert "format_on_save" in content
+
+    def test_marimo_config_not_overwritten_when_present(self, tmp_path):
+        custom_content = "[save]\nautosave = false\n"
+        (tmp_path / "marimo.toml").write_text(custom_content)
+        WorkspaceService(str(tmp_path))
+        assert (tmp_path / "marimo.toml").read_text() == custom_content
+
+    def test_ensure_marimo_config_idempotent(self, tmp_path):
+        service = WorkspaceService(str(tmp_path))
+        first_content = (tmp_path / "marimo.toml").read_text()
+        service.ensure_marimo_config()
+        assert (tmp_path / "marimo.toml").read_text() == first_content

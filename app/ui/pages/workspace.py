@@ -104,6 +104,14 @@ body.ws-marimo-mode .ws-save-btn { display: none !important; }
 body.ws-marimo-mode .ws-edit-source-btn { display: inline-flex !important; }
 .ws-marimo-iframe { display: none; border: none; width: 100%; flex: 1; min-height: 0; }
 .ws-edit-source-btn { display: none !important; }
+
+/* Collapse spacing inside folder expansions */
+.ws-tree-row > .q-expansion-item__container > .q-expansion-item__content {
+    display: flex;
+    flex-direction: column;
+    gap: 0 !important;
+    padding: 0 !important;
+}
 </style>
 <script>
 document.addEventListener("dragover", function(e) {
@@ -193,7 +201,7 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
         folder_color = "green-8" if node.is_git_folder else "amber-7"
         with (
             ui.expansion(node.name, icon=folder_icon)
-            .classes("w-full text-body2 ws-tree-row gap-0")
+            .classes("w-full text-body2 ws-tree-row")
             .style(f"padding-left: {indent}px")
             .props("dense draggable=true")
             .on("dragstart", lambda n=node: _on_dragstart(n.path))

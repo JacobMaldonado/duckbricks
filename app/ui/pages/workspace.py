@@ -137,18 +137,17 @@ def _render_file_tree_panel() -> None:
             .classes("ws-file-tree-body q-pa-sm gap-1")
             .style("display: flex; flex-direction: column")
         ):
-            tree_container = ui.column().classes("w-full gap-0")
-
-            with ui.row().classes("w-full items-center justify-between q-mb-sm"):
+            tree_container: ui.column  # declared before use in lambdas below
+            with ui.row().classes("w-full items-center justify-between q-mb-xs"):
                 ui.label("Workspace").classes("text-weight-bold text-body2")
-                with ui.row().classes("gap-1 items-center"):
+                with ui.row().classes("gap-0 items-center"):
                     ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
-                        "flat dense size=sm"
+                        "flat dense size=xs"
                     ).tooltip("New file")
                     ui.button(icon="create_new_folder", on_click=_open_new_folder_dialog).props(
-                        "flat dense size=sm color=amber-7"
+                        "flat dense size=xs color=amber-7"
                     ).tooltip("New folder")
-                    with ui.button(icon="more_vert").props("flat dense size=sm color=grey-7"):
+                    with ui.button(icon="more_vert").props("flat dense size=xs color=grey-7"):
                         with ui.menu():
                             ui.menu_item(
                                 "New File",
@@ -163,10 +162,11 @@ def _render_file_tree_panel() -> None:
                             ui.separator()
                             ui.menu_item(
                                 "New Git Folder",
-                                on_click=lambda tc=tree_container: _open_new_git_folder_dialog(tc),
+                                on_click=lambda: _open_new_git_folder_dialog(tree_container),
                                 auto_close=True,
                             )
 
+            tree_container = ui.column().classes("w-full gap-0")
             _refresh_tree(tree_container)
             ui.context.client.on_connect(lambda: _refresh_tree(tree_container))
 
@@ -195,18 +195,25 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
             ui.expansion(node.name, icon=folder_icon)
             .classes("w-full text-body2 ws-tree-row")
             .style(f"padding-left: {indent}px")
-            .props("draggable=true")
+            .props("dense draggable=true")
             .on("dragstart", lambda n=node: _on_dragstart(n.path))
             .on("dragover", lambda e: None)
             .on("drop", lambda n=node, c=tree_container: _on_drop(n.path, c, is_dir=True))
         ) as expansion:
             with expansion.add_slot("header"):
-                with ui.row().classes("w-full items-center gap-1"):
-                    ui.icon(folder_icon, color=folder_color).classes("text-sm")
-                    ui.label(node.name).classes("text-body2 text-grey-9")
+                with (
+                    ui.row()
+                    .classes("w-full items-center gap-1")
+                    .style("min-width: 0; overflow: hidden")
+                ):
+                    ui.icon(folder_icon, color=folder_color).classes("text-sm flex-shrink-0")
+                    ui.label(node.name).classes("text-body2 text-grey-9").style(
+                        "overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"
+                        " flex: 1; min-width: 0"
+                    ).tooltip(node.name)
                     if node.is_git_folder and node.git_branch:
                         ui.badge(node.git_branch, color="green-8").classes(
-                            "cursor-pointer text-xs"
+                            "cursor-pointer text-xs flex-shrink-0"
                         ).on(
                             "click.stop",
                             lambda n=node: _open_git_dialog(n.path),
@@ -220,22 +227,26 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
             Path(node.name).suffix, ("insert_drive_file", "grey-6")
         )
         is_python = Path(node.name).suffix == ".py"
+        is_notebook = Path(node.name).suffix == ".ipynb"
         with (
             ui.row()
             .classes(
                 "w-full items-center gap-1 cursor-pointer"
                 " hover:bg-blue-1 rounded q-px-sm q-py-xs ws-tree-row"
             )
-            .style(f"padding-left: {indent + 8}px")
+            .style(
+                f"padding-left: {indent + 8}px; min-width: 0; overflow: hidden; flex-wrap: nowrap"
+            )
             .props("draggable=true")
             .on("click", lambda n=node: _open_file_in_editor(n.path))
             .on("dragstart", lambda n=node: _on_dragstart(n.path))
             .on("dragover", lambda e: None)
             .on("drop", lambda n=node, c=tree_container: _on_drop(n.path, c, is_dir=False))
         ):
-            ui.icon(icon, color=color).classes("text-sm")
-            ui.label(node.name).classes("text-body2 text-grey-9")
-            ui.space()
+            ui.icon(icon, color=color).classes("text-sm flex-shrink-0")
+            ui.label(node.name).classes("text-body2 text-grey-9").style(
+                "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0"
+            ).tooltip(node.name)
             if is_python:
                 marimo_file_url = f"{MARIMO_URL}/?file={urllib.parse.quote(node.path)}"
                 ui.button(
@@ -243,7 +254,11 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
                     on_click=lambda url=marimo_file_url: ui.run_javascript(
                         f"window.open('{url}', '_blank')"
                     ),
-                ).props("flat dense size=xs color=purple").tooltip("Open in Marimo")
+                ).props("flat dense size=xs color=purple flex-shrink-0").tooltip("Open in Marimo")
+            elif is_notebook:
+                ui.icon("science", color="orange-6").classes("text-xs flex-shrink-0").tooltip(
+                    "Jupyter notebook"
+                )
             _render_context_menu(node, tree_container)
 
 
@@ -415,20 +430,20 @@ def _open_git_dialog(workspace_path: str) -> None:
 
 
 def _open_file_in_editor(relative_path: str) -> None:
+    extension = Path(relative_path).suffix.lower()
+
+    if extension == ".py":
+        _dispatch_python_file(relative_path)
+        return
+
+    if extension == ".ipynb":
+        _dispatch_notebook_file(relative_path)
+        return
+
     try:
         content = _workspace_service.read_file(relative_path)
     except FileNotFoundError:
         ui.notification(f"File not found: {relative_path}", type="warning")
-        return
-
-    extension = Path(relative_path).suffix.lower()
-
-    if extension == ".py":
-        if "import marimo" not in content:
-            content = _MARIMO_NOTEBOOK_TEMPLATE + content
-            _workspace_service.write_file(relative_path, content)
-            ui.notification("Marimo header added automatically.", type="info")
-        _activate_marimo_mode(relative_path)
         return
 
     _deactivate_marimo_mode()
@@ -457,6 +472,148 @@ def _open_file_in_editor(relative_path: str) -> None:
             f".then(m => m.mount({editor_id}, {{}}))"
             f".catch(e => console.error('[sql_completion workspace]', e))"
         )
+
+
+def _dispatch_python_file(relative_path: str) -> None:
+    """Ask how to open a .py file: in Marimo notebook mode or raw source editor."""
+    try:
+        content = _workspace_service.read_file(relative_path)
+    except FileNotFoundError:
+        ui.notification(f"File not found: {relative_path}", type="warning")
+        return
+
+    if "import marimo" in content:
+        _activate_marimo_mode(relative_path)
+        return
+
+    with ui.dialog() as dialog, ui.card().style("min-width: 400px"):
+        ui.label("Open Python file").classes("text-weight-bold text-body1")
+        ui.label(
+            "This file does not have a Marimo notebook structure. How do you want to open it?"
+        ).classes("text-grey-7 text-caption q-mt-xs")
+        with ui.row().classes("justify-end gap-2 q-mt-md"):
+            ui.button(
+                "Edit as source", on_click=lambda: _open_as_source(relative_path, dialog)
+            ).props("flat color=grey-7")
+            ui.button(
+                "Open in Marimo",
+                icon="rocket_launch",
+                on_click=lambda: _convert_to_marimo_and_open(relative_path, content, dialog),
+            ).props("color=purple")
+    dialog.open()
+
+
+def _open_as_source(relative_path: str, dialog: ui.dialog) -> None:
+    dialog.close()
+    try:
+        content = _workspace_service.read_file(relative_path)
+    except FileNotFoundError:
+        ui.notification(f"File not found: {relative_path}", type="warning")
+        return
+
+    _deactivate_marimo_mode()
+    language = _CODEMIRROR_LANGUAGE_BY_EXTENSION.get(Path(relative_path).suffix.lower())
+    storage = ui.context.client.storage
+    storage["_ws_current_path"] = relative_path
+    storage["_ws_lang"] = language
+
+    editor: ui.codemirror = storage.get("_ws_editor")
+    label: ui.label = storage.get("_ws_label")
+    if editor:
+        editor.set_language(language)
+        editor.set_value(content)
+        editor.update()
+    if label:
+        label.set_text(relative_path)
+
+
+def _convert_to_marimo_and_open(
+    relative_path: str, original_content: str, dialog: ui.dialog
+) -> None:
+    dialog.close()
+    new_content = _MARIMO_NOTEBOOK_TEMPLATE + original_content
+    try:
+        _workspace_service.write_file(relative_path, new_content)
+    except Exception as exc:
+        ui.notification(f"Could not update file: {exc}", type="negative")
+        return
+    ui.notification("Marimo notebook structure added.", type="positive")
+    _activate_marimo_mode(relative_path)
+
+
+def _dispatch_notebook_file(relative_path: str) -> None:
+    """Ask whether to convert an .ipynb to a Marimo notebook or open it as raw JSON."""
+    base_name = Path(relative_path).stem
+    parent = str(Path(relative_path).parent)
+    suggested_py = f"{parent}/{base_name}.py" if parent != "." else f"{base_name}.py"
+
+    with ui.dialog() as dialog, ui.card().style("min-width: 440px"):
+        ui.label("Jupyter Notebook").classes("text-weight-bold text-body1")
+        ui.label(f"Convert '{Path(relative_path).name}' to a Marimo notebook?").classes(
+            "text-grey-7 text-caption q-mt-xs"
+        )
+        ui.label(f"Output will be saved as: {suggested_py}").classes(
+            "text-caption text-green-7 q-mb-xs"
+        )
+        with ui.row().classes("justify-end gap-2 q-mt-md"):
+            ui.button(
+                "Open as source",
+                on_click=lambda: _open_notebook_as_source(relative_path, dialog),
+            ).props("flat color=grey-7")
+            ui.button(
+                "Convert to Marimo",
+                icon="transform",
+                on_click=lambda: _run_marimo_convert(relative_path, suggested_py, dialog),
+            ).props("color=orange-8")
+    dialog.open()
+
+
+def _open_notebook_as_source(relative_path: str, dialog: ui.dialog) -> None:
+    dialog.close()
+    try:
+        content = _workspace_service.read_file(relative_path)
+    except FileNotFoundError:
+        ui.notification(f"File not found: {relative_path}", type="warning")
+        return
+
+    _deactivate_marimo_mode()
+    storage = ui.context.client.storage
+    storage["_ws_current_path"] = relative_path
+    storage["_ws_lang"] = None
+
+    editor: ui.codemirror = storage.get("_ws_editor")
+    label: ui.label = storage.get("_ws_label")
+    if editor:
+        editor.set_language(None)
+        editor.set_value(content)
+        editor.update()
+    if label:
+        label.set_text(relative_path)
+
+
+def _run_marimo_convert(relative_path: str, output_py_path: str, dialog: ui.dialog) -> None:
+    """Run `marimo convert <notebook.ipynb> -o <output.py>` and open the result."""
+    import subprocess  # noqa: PLC0415
+
+    dialog.close()
+    abs_input = Path(WORKSPACE_PATH) / relative_path
+    abs_output = Path(WORKSPACE_PATH) / output_py_path
+
+    try:
+        result = subprocess.run(
+            ["marimo", "convert", str(abs_input), "-o", str(abs_output)],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Conversion failed")
+    except Exception as exc:
+        ui.notification(f"Conversion failed: {exc}", type="negative")
+        return
+
+    ui.notification(f"Converted to {output_py_path}", type="positive")
+    _activate_marimo_mode(output_py_path)
 
 
 def _save_current_file() -> None:

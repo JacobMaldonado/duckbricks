@@ -15,15 +15,13 @@ _GIT_DIALOG_CSS = """
 <style>
 .git-dialog-container { display: flex; flex-direction: column; height: 70vh; min-height: 400px; }
 .git-files-panel { flex: 0 0 40%; border-right: 1px solid #e0e0e0; overflow-y: auto; }
-.git-diff-panel { flex: 1; overflow: auto; background: #fafafa; }
+.git-diff-panel { flex: 1; overflow: hidden; background: #fafafa; }
 .git-file-row { cursor: pointer; border-radius: 4px; padding: 4px 8px; }
 .git-file-row:hover { background: #e3f2fd; }
 .git-file-row.selected { background: #bbdefb; }
-.git-diff-code { font-family: monospace; font-size: 12px; white-space: pre;
-                 line-height: 1.5; padding: 12px; }
-.git-diff-add { background: #e8f5e9; color: #2e7d32; }
-.git-diff-del { background: #ffebee; color: #c62828; }
-.git-diff-hunk { background: #e3f2fd; color: #1565c0; }
+.git-diff-panel .nicegui-codemirror { height: 100% !important; }
+.git-diff-panel .cm-editor { height: 100% !important; }
+.git-diff-panel .cm-scroller { overflow: auto !important; }
 </style>
 """
 
@@ -40,7 +38,7 @@ class GitFolderDialog:
 
         self._dialog: ui.dialog | None = None
         self._files_container: ui.column | None = None
-        self._diff_container: ui.element | None = None
+        self._diff_editor: ui.codemirror | None = None
         self._branch_select: ui.select | None = None
         self._commit_input: ui.textarea | None = None
 
@@ -60,7 +58,15 @@ class GitFolderDialog:
                         self._files_container = ui.column().classes("w-full gap-1")
                         self._render_commit_footer()
                     with ui.element("div").classes("git-diff-panel q-pa-sm").style("flex: 1"):
-                        self._diff_container = ui.element("div").classes("git-diff-code w-full")
+                        self._diff_editor = (
+                            ui.codemirror(
+                                value="← Select a file to view its diff",
+                                language="diff",
+                                theme="githubLight",
+                            )
+                            .classes("w-full h-full")
+                            .disable()
+                        )
         dialog.open()
         self._reload()
 
@@ -195,29 +201,14 @@ class GitFolderDialog:
 
     def _show_diff(self, file_path: str) -> None:
         self._active_diff_path = file_path
-        if self._diff_container is None:
+        if self._diff_editor is None:
             return
-        self._diff_container.clear()
         try:
             diff_text = self._service.get_diff(self._workspace_path, file_path)
         except Exception as exc:
-            diff_text = f"(error: {exc})"
-
-        with self._diff_container:
-            self._render_diff_lines(diff_text)
-
+            diff_text = f"(error loading diff: {exc})"
+        self._diff_editor.set_value(diff_text)
         self._refresh_files()
-
-    def _render_diff_lines(self, diff_text: str) -> None:
-        for line in diff_text.splitlines():
-            if line.startswith("+") and not line.startswith("+++"):
-                ui.element("div").classes("git-diff-add").style("white-space: pre").set_text(line)
-            elif line.startswith("-") and not line.startswith("---"):
-                ui.element("div").classes("git-diff-del").style("white-space: pre").set_text(line)
-            elif line.startswith("@@"):
-                ui.element("div").classes("git-diff-hunk").style("white-space: pre").set_text(line)
-            else:
-                ui.element("div").style("white-space: pre").set_text(line)
 
     def _on_branch_change(self, event: object) -> None:
         if self._status is None:
@@ -265,8 +256,8 @@ class GitFolderDialog:
             self._selected_files.discard(changed_file.path)
             if self._active_diff_path == changed_file.path:
                 self._active_diff_path = None
-                if self._diff_container:
-                    self._diff_container.clear()
+                if self._diff_editor:
+                    self._diff_editor.set_value("← Select a file to view its diff")
             self._reload()
         except Exception as exc:
             ui.notification(f"Discard failed: {exc}", type="negative")

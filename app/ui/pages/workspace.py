@@ -106,9 +106,7 @@ body.ws-marimo-mode .ws-edit-source-btn { display: inline-flex !important; }
 .ws-edit-source-btn { display: none !important; }
 
 /* Collapse spacing inside folder expansions */
-.ws-tree-row > .q-expansion-item__container > .q-expansion-item__content {
-    display: flex;
-    flex-direction: column;
+.ws-tree-row .nicegui-expansion-content {
     gap: 0 !important;
     padding: 0 !important;
 }

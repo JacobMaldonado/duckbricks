@@ -148,7 +148,7 @@ def _render_file_tree_panel() -> None:
             tree_container: ui.column  # declared before use in lambdas below
             with ui.row().classes("w-full items-center justify-between q-mb-xs"):
                 ui.label("Workspace").classes("text-weight-bold text-body2")
-                with ui.row().classes("gap-0 items-center"):
+                with ui.row().classes("items-center").style("gap: 0"):
                     ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
                         "flat dense size=xs"
                     ).tooltip("New file")

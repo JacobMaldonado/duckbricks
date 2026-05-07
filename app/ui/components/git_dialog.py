@@ -22,7 +22,38 @@ _GIT_DIALOG_CSS = """
 .git-diff-panel .nicegui-codemirror { height: 100% !important; }
 .git-diff-panel .cm-editor { height: 100% !important; }
 .git-diff-panel .cm-scroller { overflow: auto !important; }
+.git-diff-panel .cm-line.diff-line-added { background-color: #d1fae5 !important; }
+.git-diff-panel .cm-line.diff-line-removed { background-color: #fee2e2 !important; }
+.git-diff-panel .cm-line.diff-line-hunk { background-color: #dbeafe !important; }
 </style>
+"""
+
+_GIT_DIFF_LINE_STYLER_JS = """
+(function() {
+    if (window._gitDiffLineObserver) {
+        window._gitDiffLineObserver.disconnect();
+        window._gitDiffLineObserver = null;
+    }
+
+    function classifyLine(line) {
+        const text = line.textContent || '';
+        line.classList.remove('diff-line-added', 'diff-line-removed', 'diff-line-hunk');
+        if (text.startsWith('+')) line.classList.add('diff-line-added');
+        else if (text.startsWith('-')) line.classList.add('diff-line-removed');
+        else if (text.startsWith('@@')) line.classList.add('diff-line-hunk');
+    }
+
+    function styleAllLines(root) {
+        root.querySelectorAll('.cm-line').forEach(classifyLine);
+    }
+
+    const panel = document.querySelector('.git-diff-panel');
+    if (!panel) return;
+
+    window._gitDiffLineObserver = new MutationObserver(() => styleAllLines(panel));
+    window._gitDiffLineObserver.observe(panel, { childList: true, subtree: true });
+    styleAllLines(panel);
+})();
 """
 
 
@@ -66,6 +97,7 @@ class GitFolderDialog:
                                 "absolute-center text-grey-5 text-body2"
                             )
         dialog.open()
+        ui.run_javascript(_GIT_DIFF_LINE_STYLER_JS)
         self._reload()
 
     def _render_header(self) -> None:

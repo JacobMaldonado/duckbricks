@@ -283,6 +283,13 @@ def _render_context_menu(node: WorkspaceNode, tree_container: ui.column) -> None
                 on_click=lambda n=node, c=tree_container: _clone_dialog(n, c),
                 auto_close=True,
             )
+            if node.is_dir and not node.is_git_folder:
+                ui.separator()
+                ui.menu_item(
+                    "Convert to Git Folder",
+                    on_click=lambda n=node, c=tree_container: _open_convert_to_git_dialog(n, c),
+                    auto_close=True,
+                )
             ui.separator()
             ui.menu_item(
                 "Delete",
@@ -798,6 +805,133 @@ def _create_folder(relative_path: str, dialog) -> None:
         ui.navigate.to("/workspace")
     except Exception as exc:
         ui.notification(f"Error: {exc}", type="negative")
+
+
+def _open_convert_to_git_dialog(node: WorkspaceNode, tree_container: ui.column) -> None:
+    from app.services.git.connection_service import GitConnectionService
+    from app.services.git.providers.base import Repository
+
+    connection_service = GitConnectionService()
+
+    with ui.dialog() as dialog, ui.card().style("min-width: 480px"):
+        with ui.row().classes("items-center gap-2 q-mb-sm"):
+            ui.icon("merge_type", color="green-8").classes("text-2xl")
+            with ui.column().classes("gap-0"):
+                ui.label(f'Convert "{node.name}" to Git Folder').classes(
+                    "text-weight-bold text-body1"
+                )
+                ui.label(
+                    "The remote repository must be empty (no commits). "
+                    "All existing files will be pushed as the initial commit."
+                ).classes("text-caption text-grey-7")
+
+        connections = connection_service.list_all()
+        if not connections:
+            ui.label("No git connections configured.").classes("text-grey-6")
+            ui.label("Add a connection in Settings first.").classes("text-caption text-grey-5")
+            with ui.row().classes("justify-end q-mt-md"):
+                ui.button("Go to Settings", on_click=lambda: ui.navigate.to("/settings")).props(
+                    "color=primary"
+                )
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+            dialog.open()
+            return
+
+        connection_options = {str(c.id): f"{c.name} ({c.provider_type})" for c in connections}
+        connection_select = ui.select(
+            options=connection_options,
+            label="Git Connection",
+        ).classes("w-full")
+
+        repos_state: dict[str, list[Repository]] = {"items": []}
+        repo_select = (
+            ui.select(options={}, label="Repository (browse & search)")
+            .classes("w-full")
+            .props("use-input input-debounce=0 clearable")
+        )
+
+        branch_input = ui.input("Branch", value="main").classes("w-full")
+
+        with ui.row().classes("w-full items-center gap-2 q-my-xs"):
+            ui.separator().classes("flex-1")
+            ui.label("or paste URL directly").classes("text-caption text-grey-6")
+            ui.separator().classes("flex-1")
+
+        url_input = (
+            ui.input(
+                "Repository URL",
+                placeholder="https://github.com/user/empty-repo",
+            )
+            .classes("w-full")
+            .props("clearable")
+        )
+
+        def _autofill_from_dropdown(repo_url: str) -> None:
+            if not repo_url:
+                return
+            selected = next((r for r in repos_state["items"] if r.clone_url == repo_url), None)
+            if selected:
+                branch_input.set_value(selected.default_branch or "main")
+
+        repo_select.on("update:model-value", lambda e: _autofill_from_dropdown(e.args))
+
+        def load_repos() -> None:
+            if not connection_select.value:
+                return
+            try:
+                repos = connection_service.list_repositories(int(connection_select.value))
+                repos_state["items"] = repos
+                repo_select.options = {r.clone_url: r.full_name for r in repos}
+                repo_select.update()
+            except Exception as exc:
+                ui.notification(f"Could not load repositories: {exc}", type="negative")
+
+        connection_select.on("update:model-value", lambda _: load_repos())
+
+        with ui.row().classes("justify-end gap-2 q-mt-md"):
+            ui.button("Cancel", on_click=dialog.close).props("flat")
+            ui.button(
+                "Convert & Push",
+                icon="upload",
+                on_click=lambda: _convert_folder_to_git(
+                    folder_path=node.path,
+                    connection_id_str=connection_select.value,
+                    repo_url=repo_select.value,
+                    direct_url=url_input.value,
+                    branch=branch_input.value,
+                    dialog=dialog,
+                    tree_container=tree_container,
+                ),
+            ).props("color=green-8")
+    dialog.open()
+
+
+def _convert_folder_to_git(
+    folder_path: str,
+    connection_id_str: str,
+    repo_url: str,
+    direct_url: str,
+    branch: str,
+    dialog,
+    tree_container: ui.column,
+) -> None:
+    branch = branch.strip() or "main"
+    resolved_url = direct_url.strip() or repo_url
+    if not connection_id_str or not resolved_url:
+        ui.notification("A connection and a repository are required.", type="warning")
+        return
+    try:
+        _git_folder_service.convert_to_git(
+            folder_path=folder_path,
+            connection_id=int(connection_id_str),
+            repo_url=resolved_url,
+            branch=branch,
+        )
+        dialog.close()
+        ui.notification(f"'{folder_path}' converted and pushed successfully.", type="positive")
+        _refresh_tree(tree_container)
+    except Exception as exc:
+        ui.notification(f"Conversion failed: {exc}", type="negative")
 
 
 def _open_new_git_folder_dialog(tree_container: ui.column) -> None:

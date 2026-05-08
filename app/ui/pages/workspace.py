@@ -13,9 +13,11 @@ from app.services.git.folder_service import GitFolderService
 from app.services.workspace import WorkspaceService
 from app.services.workspace.workspace_service import WorkspaceNode
 from app.ui.components.layout import layout_frame
+from app.ui.workspace_utils import folder_name_from_url as _folder_name_from_url
 
 _workspace_service = WorkspaceService(WORKSPACE_PATH)
 _git_folder_service = GitFolderService(WORKSPACE_PATH)
+
 
 _ICON_BY_EXTENSION = {
     ".sql": ("description", "blue-7"),
@@ -826,9 +828,45 @@ def _open_new_git_folder_dialog(tree_container: ui.column) -> None:
         ).classes("w-full")
 
         repos_state: dict[str, list[Repository]] = {"items": []}
-        repo_select = ui.select(options={}, label="Repository").classes("w-full")
+        repo_select = (
+            ui.select(options={}, label="Repository (browse & search)")
+            .classes("w-full")
+            .props("use-input input-debounce=0 clearable")
+        )
+
         branch_input = ui.input("Branch", value="main").classes("w-full")
+
+        with ui.row().classes("w-full items-center gap-2 q-my-xs"):
+            ui.separator().classes("flex-1")
+            ui.label("or paste URL directly").classes("text-caption text-grey-6")
+            ui.separator().classes("flex-1")
+
+        url_input = (
+            ui.input(
+                "Repository URL",
+                placeholder="https://github.com/user/my-repo",
+            )
+            .classes("w-full")
+            .props("clearable")
+        )
+
         folder_input = ui.input("Folder name in workspace", placeholder="my-repo").classes("w-full")
+
+        def _autofill_from_dropdown(repo_url: str) -> None:
+            if not repo_url:
+                return
+            selected = next((r for r in repos_state["items"] if r.clone_url == repo_url), None)
+            if selected:
+                branch_input.set_value(selected.default_branch or "main")
+            folder_input.set_value(_folder_name_from_url(repo_url))
+
+        def _autofill_from_url(raw_url: str) -> None:
+            if not raw_url.strip():
+                return
+            folder_input.set_value(_folder_name_from_url(raw_url))
+
+        repo_select.on("update:model-value", lambda e: _autofill_from_dropdown(e.args))
+        url_input.on("update:model-value", lambda e: _autofill_from_url(e.args or ""))
 
         def load_repos() -> None:
             if not connection_select.value:
@@ -848,12 +886,13 @@ def _open_new_git_folder_dialog(tree_container: ui.column) -> None:
             ui.button(
                 "Clone & Create",
                 on_click=lambda: _create_git_folder(
-                    folder_input.value,
-                    connection_select.value,
-                    repo_select.value,
-                    branch_input.value,
-                    dialog,
-                    tree_container,
+                    folder_name=folder_input.value,
+                    connection_id_str=connection_select.value,
+                    repo_url=repo_select.value,
+                    direct_url=url_input.value,
+                    branch=branch_input.value,
+                    dialog=dialog,
+                    tree_container=tree_container,
                 ),
             ).props("color=primary")
     dialog.open()
@@ -863,20 +902,22 @@ def _create_git_folder(
     folder_name: str,
     connection_id_str: str,
     repo_url: str,
+    direct_url: str,
     branch: str,
     dialog,
     tree_container: ui.column,
 ) -> None:
     folder_name = folder_name.strip()
     branch = branch.strip() or "main"
-    if not folder_name or not connection_id_str or not repo_url:
+    resolved_url = direct_url.strip() or repo_url
+    if not folder_name or not connection_id_str or not resolved_url:
         ui.notification("All fields are required.", type="warning")
         return
     try:
         _git_folder_service.create(
             folder_name=folder_name,
             git_connection_id=int(connection_id_str),
-            repo_url=repo_url,
+            repo_url=resolved_url,
             branch=branch,
         )
         dialog.close()

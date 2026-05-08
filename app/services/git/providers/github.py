@@ -42,8 +42,12 @@ class GitHubPatProvider(GitProvider):
 
     def clone(self, repo_url: str, destination: str, branch: str) -> None:
         """Clone the repository using the PAT embedded in the URL for authentication."""
-        authenticated_url = self._inject_token_into_url(repo_url)
+        authenticated_url = self.build_authenticated_url(repo_url)
         git.Repo.clone_from(authenticated_url, destination, branch=branch)
+
+    def build_authenticated_url(self, repo_url: str) -> str:
+        """Return repo_url with the PAT injected for HTTPS authentication."""
+        return self._inject_token_into_url(repo_url)
 
     def _authenticated_get(self, path: str) -> httpx.Response:
         with httpx.Client(base_url=self._host) as client:

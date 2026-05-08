@@ -33,5 +33,9 @@ class GitProvider(ABC):
         """Clone a repository into the given destination directory on the given branch."""
 
     @abstractmethod
+    def build_authenticated_url(self, repo_url: str) -> str:
+        """Return repo_url with credentials injected for authentication."""
+
+    @abstractmethod
     def provider_type(self) -> str:
         """Return the canonical provider type identifier (e.g. 'github')."""

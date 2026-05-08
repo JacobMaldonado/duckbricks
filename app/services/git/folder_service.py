@@ -147,3 +147,69 @@ class GitFolderService:
             if folder is None:
                 return None
             return int(folder.git_connection_id)
+
+    def convert_to_git(
+        self,
+        folder_path: str,
+        connection_id: int,
+        repo_url: str,
+        branch: str,
+    ) -> None:
+        """Initialise a workspace folder as a git repo and push it to an empty remote.
+
+        The method validates that:
+        - The folder exists on disk.
+        - The folder is **not** already a git repository.
+        - The remote repository is **empty** (no refs/commits).
+
+        On success the folder is committed, pushed, and registered in the DB.
+        """
+        full_path = self._workspace_root / folder_path
+        if not full_path.is_dir():
+            raise ValueError(f"Folder '{folder_path}' does not exist in the workspace.")
+
+        self._assert_not_already_git_repo(full_path)
+
+        connection = _git_connection_service.get(connection_id)
+        provider = _git_connection_service.build_provider(connection)
+        auth_url = provider.build_authenticated_url(repo_url)
+
+        self._assert_remote_is_empty(auth_url, folder_path)
+
+        repo = gitpython.Repo.init(str(full_path))
+        repo.git.symbolic_ref("HEAD", f"refs/heads/{branch}")
+        repo.git.remote("add", "origin", repo_url)
+        repo.git.add("-A")
+        repo.git.commit("--allow-empty", "-m", "Initial commit")
+        repo.git.push(auth_url, f"{branch}:{branch}")
+
+        with get_session() as session:
+            session.add(
+                GitFolder(
+                    workspace_path=folder_path,
+                    git_connection_id=connection_id,
+                    repo_url=repo_url,
+                    branch=branch,
+                )
+            )
+
+    @staticmethod
+    def _assert_not_already_git_repo(full_path: Path) -> None:
+        """Raise ValueError if the path is already a git repository."""
+        try:
+            gitpython.Repo(str(full_path))
+            raise ValueError(f"Folder '{full_path.name}' is already a git repository.")
+        except gitpython.InvalidGitRepositoryError:
+            pass
+
+    @staticmethod
+    def _assert_remote_is_empty(auth_url: str, folder_path: str) -> None:
+        """Raise ValueError if the remote already contains commits or branches."""
+        try:
+            remote_refs = gitpython.Git().ls_remote(auth_url)
+        except Exception as exc:
+            raise ValueError(f"Could not reach remote for '{folder_path}': {exc}") from exc
+        if remote_refs.strip():
+            raise ValueError(
+                "Remote repository is not empty. " "Please use a fresh repository with no commits."
+            )

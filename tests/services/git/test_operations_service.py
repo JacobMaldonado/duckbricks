@@ -6,8 +6,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from git import GitCommandError
 
-from app.services.git.models import ChangedFile, GitStatus
+from app.services.git.models import ChangedFile, GitAuthError, GitStatus
 from app.services.git.operations_service import GitOperationsService
 
 
@@ -255,3 +256,53 @@ class TestBuildAuthenticatedUrl:
         result = GitOperationsService._inject_token("https://github.com/org/my-repo.git", "ABC")
         assert result is not None
         assert "/org/my-repo.git" in result
+
+
+class TestClassifyGitError:
+    def _make_cmd_error(self, status: int, stderr: str) -> GitCommandError:
+        err = GitCommandError(["git", "push"], status)
+        err.stderr = stderr
+        return err
+
+    def test_auth_failure_returns_git_auth_error(self):
+        exc = self._make_cmd_error(128, "fatal: Authentication failed for 'https://github.com/'")
+        result = GitOperationsService._classify_git_error(exc)
+        assert isinstance(result, GitAuthError)
+
+    def test_non_auth_exit_128_returns_original(self):
+        exc = self._make_cmd_error(128, "fatal: repository not found")
+        result = GitOperationsService._classify_git_error(exc)
+        assert result is exc
+
+    def test_non_128_exit_code_returns_original(self):
+        exc = self._make_cmd_error(1, "Authentication failed")
+        result = GitOperationsService._classify_git_error(exc)
+        assert result is exc
+
+    def test_push_raises_git_auth_error_on_auth_failure(self, mock_repo):
+        service, repo, _ = mock_repo
+        repo.remotes = [MagicMock()]
+
+        auth_exc = GitCommandError(["git", "push"], 128)
+        auth_exc.stderr = "fatal: Authentication failed for 'https://github.com/'"
+
+        with patch.object(
+            service, "_build_authenticated_url", return_value="https://oauth2:t@github.com/r.git"
+        ):
+            repo.git.push.side_effect = auth_exc
+            with pytest.raises(GitAuthError):
+                service.commit_and_push("repo", "fix: auth", ["file.py"])
+
+    def test_pull_raises_git_auth_error_on_auth_failure(self, mock_repo):
+        service, repo, _ = mock_repo
+        repo.remotes = [MagicMock()]
+
+        auth_exc = GitCommandError(["git", "pull"], 128)
+        auth_exc.stderr = "fatal: Authentication failed for 'https://github.com/'"
+
+        with patch.object(
+            service, "_build_authenticated_url", return_value="https://oauth2:t@github.com/r.git"
+        ):
+            repo.git.pull.side_effect = auth_exc
+            with pytest.raises(GitAuthError):
+                service.pull("repo")

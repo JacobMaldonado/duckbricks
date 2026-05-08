@@ -73,6 +73,14 @@ class GitConnectionService:
         provider = self.build_provider(connection)
         return provider.validate()
 
+    def update_token(self, connection_id: int, new_token: str) -> None:
+        """Encrypt and persist a new PAT for the given connection."""
+        with get_session() as session:
+            connection = session.query(GitConnection).filter_by(id=connection_id).first()
+            if connection is None:
+                raise ValueError(f"GitConnection {connection_id} not found.")
+            connection.token_encrypted = TokenEncryptor.encrypt(new_token)
+
     def list_repositories(self, connection_id: int) -> list[Repository]:
         """Return repositories available through the given connection."""
         connection = self.get(connection_id)

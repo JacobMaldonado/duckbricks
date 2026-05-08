@@ -83,7 +83,7 @@ services:
     command: >
       sh -c "pip install --no-cache-dir marimo duckdb uv sqlglot &&
              until [ -f /data/.duckbricks/start_marimo.py ]; do echo 'Waiting for DuckBricks helpers...'; sleep 2; done &&
-             python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718 --base-url /marimo --autosave after_delay"
+             python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718 --base-url /marimo"
     working_dir: /data/workspace
     volumes:
       - duckbricks-data:/data

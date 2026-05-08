@@ -124,7 +124,7 @@ def workspace_page() -> None:
     layout_frame("Workspace")
     ui.add_head_html(_DRAG_DROP_JS)
 
-    with ui.row().classes("w-full h-full gap-0").style("height: calc(100vh - 60px)"):
+    with ui.row().classes("w-full h-full gap-0").style("height: calc(100vh - 100px)"):
         _render_file_tree_panel()
         _render_editor_panel()
 

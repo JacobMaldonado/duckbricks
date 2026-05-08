@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from unittest.mock import patch
 
 from app.services.git.encryption import TokenEncryptor
 
@@ -33,6 +32,7 @@ def test_decrypt_raises_on_corrupted_data():
 
 def test_uses_generated_key_when_secret_not_set():
     import app.services.git.encryption as enc
+
     original_fernet = enc._fernet
     original_key = enc.SECRET_KEY
     try:

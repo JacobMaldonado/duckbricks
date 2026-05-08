@@ -51,9 +51,7 @@ def _render_connection_card(connection, container: ui.column) -> None:
             ui.icon("hub", color="blue-7").classes("text-xl")
             with ui.column().classes("flex-1 gap-0"):
                 ui.label(connection.name).classes("text-weight-medium")
-                ui.label(connection.provider_type.capitalize()).classes(
-                    "text-caption text-grey-6"
-                )
+                ui.label(connection.provider_type.capitalize()).classes("text-caption text-grey-6")
 
             status_badge = ui.badge("checking…", color="grey-5").classes("text-xs")
 
@@ -68,7 +66,7 @@ def _render_connection_card(connection, container: ui.column) -> None:
             ).props("flat dense size=sm color=negative").tooltip("Delete connection")
 
     ui.run_javascript(
-        f"setTimeout(() => {{}}, 0)"  # trigger status check on render via event
+        "setTimeout(() => {}, 0)"  # trigger status check on render via event
     )
 
 
@@ -125,18 +123,15 @@ def _open_add_connection_dialog() -> None:
     with ui.dialog() as dialog, ui.card().style("min-width: 440px"):
         ui.label("Add Git Connection").classes("text-h6")
 
-        name_input = ui.input("Connection name", placeholder="My GitHub Account").classes(
-            "w-full"
-        )
+        name_input = ui.input("Connection name", placeholder="My GitHub Account").classes("w-full")
         provider_select = ui.select(
             options=provider_options,
             label="Provider",
             value=supported[0] if supported else None,
         ).classes("w-full")
-        token_input = (
-            ui.input("Personal Access Token", password=True, password_toggle_button=True)
-            .classes("w-full")
-        )
+        token_input = ui.input(
+            "Personal Access Token", password=True, password_toggle_button=True
+        ).classes("w-full")
         ui.label(
             "The token is encrypted before being stored. It is never saved in plaintext."
         ).classes("text-caption text-grey-6")
@@ -162,9 +157,7 @@ def _save_connection(name: str, provider_type: str, token: str, dialog) -> None:
         ui.notification("Name and token are required.", type="warning")
         return
     try:
-        connection = _connection_service.create(
-            name=name, provider_type=provider_type, token=token
-        )
+        connection = _connection_service.create(name=name, provider_type=provider_type, token=token)
         provider = _connection_service.build_provider(connection)
         if not provider.validate():
             _connection_service.delete(connection.id)

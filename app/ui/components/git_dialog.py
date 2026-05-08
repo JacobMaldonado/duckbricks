@@ -6,8 +6,9 @@ import logging
 
 from nicegui import ui
 
-from app.services.git.models import ChangedFile, GitStatus
+from app.services.git.models import ChangedFile, GitAuthError, GitStatus
 from app.services.git.operations_service import GitOperationsService
+from app.ui.components.git_reconnect_dialog import GitReconnectDialog
 
 _log = logging.getLogger(__name__)
 
@@ -307,6 +308,8 @@ class GitFolderDialog:
             self._service.pull(self._workspace_path)
             ui.notification("Pull successful.", type="positive")
             self._reload()
+        except GitAuthError:
+            GitReconnectDialog(self._workspace_path, on_reconnect=self._pull).open()
         except Exception as exc:
             ui.notification(f"Pull failed: {exc}", type="negative")
 
@@ -329,6 +332,8 @@ class GitFolderDialog:
             if self._commit_input:
                 self._commit_input.set_value("")
             self._reload()
+        except GitAuthError:
+            GitReconnectDialog(self._workspace_path, on_reconnect=self._commit_and_push).open()
         except Exception as exc:
             ui.notification(f"Commit/push failed: {exc}", type="negative")
 

@@ -31,9 +31,7 @@ class GitProviderFactory:
         constructor = _REGISTRY.get(provider_type)
         if constructor is None:
             supported = sorted(_REGISTRY.keys())
-            raise ValueError(
-                f"Unknown provider type '{provider_type}'. Supported: {supported}"
-            )
+            raise ValueError(f"Unknown provider type '{provider_type}'. Supported: {supported}")
         return constructor(token=token, host=host)
 
     @staticmethod

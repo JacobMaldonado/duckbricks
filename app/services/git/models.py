@@ -5,6 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 
+class GitAuthError(Exception):
+    """Raised when a git remote operation fails due to authentication."""
+
+
 @dataclass
 class ChangedFile:
     """Represents a single file with outstanding changes in a git repository."""

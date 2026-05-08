@@ -7,10 +7,10 @@ from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 import git as gitpython
-from git import InvalidGitRepositoryError, Repo
+from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 from app.config import WORKSPACE_PATH
-from app.services.git.models import ChangedFile, GitStatus
+from app.services.git.models import ChangedFile, GitAuthError, GitStatus
 
 _log = logging.getLogger(__name__)
 
@@ -157,17 +157,31 @@ class GitOperationsService:
 
     def _push_with_auth(self, repo: Repo, folder_path: str) -> None:
         auth_url = self._build_authenticated_url(folder_path, repo)
-        if auth_url:
-            repo.git.push(auth_url, repo.active_branch.name)
-        else:
-            repo.remotes.origin.push()
+        try:
+            if auth_url:
+                repo.git.push(auth_url, repo.active_branch.name)
+            else:
+                repo.remotes.origin.push()
+        except GitCommandError as exc:
+            raise self._classify_git_error(exc) from exc
 
     def _pull_with_auth(self, repo: Repo, folder_path: str) -> None:
         auth_url = self._build_authenticated_url(folder_path, repo)
-        if auth_url:
-            repo.git.pull(auth_url, repo.active_branch.name)
-        else:
-            repo.remotes.origin.pull()
+        try:
+            if auth_url:
+                repo.git.pull(auth_url, repo.active_branch.name)
+            else:
+                repo.remotes.origin.pull()
+        except GitCommandError as exc:
+            raise self._classify_git_error(exc) from exc
+
+    @staticmethod
+    def _classify_git_error(exc: GitCommandError) -> GitAuthError | GitCommandError:
+        """Return GitAuthError for authentication failures, otherwise the original error."""
+        stderr = (exc.stderr or "").lower()
+        if exc.status == 128 and "authentication failed" in stderr:
+            return GitAuthError(str(exc))
+        return exc
 
     def _build_authenticated_url(self, folder_path: str, repo: Repo) -> str | None:
         """Look up the stored PAT for this folder and inject it into the remote URL."""

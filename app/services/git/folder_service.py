@@ -95,3 +95,19 @@ class GitFolderService:
                 return False
             connection_id = folder.git_connection_id
         return not _git_connection_service.test_connection(connection_id)
+
+    def reassign_connection(self, workspace_path: str, connection_id: int) -> None:
+        """Point this folder at a different git connection."""
+        with get_session() as session:
+            folder = session.query(GitFolder).filter_by(workspace_path=workspace_path).first()
+            if folder is None:
+                raise ValueError(f"No git folder registered at '{workspace_path}'.")
+            folder.git_connection_id = connection_id
+
+    def get_connection_id(self, workspace_path: str) -> int | None:
+        """Return the git_connection_id for a workspace folder, or None."""
+        with get_session() as session:
+            folder = session.query(GitFolder).filter_by(workspace_path=workspace_path).first()
+            if folder is None:
+                return None
+            return int(folder.git_connection_id)

@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from nicegui import ui
 
+from app.config import WORKSPACE_PATH
 from app.services.git.connection_service import GitConnectionService
 from app.services.git.folder_service import GitFolderService
-from app.config import WORKSPACE_PATH
 
 _log = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class GitReconnectDialog:
             ui.notification("Please select a connection.", type="warning")
             return
         try:
-            self._folder_service.reassign_connection(self._workspace_path, connection_id)
+            self._folder_service.register_or_reassign(self._workspace_path, connection_id)
             self._close()
             self._on_reconnect()
         except Exception as exc:

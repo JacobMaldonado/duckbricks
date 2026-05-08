@@ -96,13 +96,49 @@ class GitFolderService:
             connection_id = folder.git_connection_id
         return not _git_connection_service.test_connection(connection_id)
 
-    def reassign_connection(self, workspace_path: str, connection_id: int) -> None:
-        """Point this folder at a different git connection."""
+    def register_or_reassign(self, workspace_path: str, connection_id: int) -> None:
+        """Link a folder to the given connection, creating the DB record if necessary.
+
+        If the folder is already registered, its connection is updated in place.
+        If it is not registered yet (e.g. cloned outside DuckBricks or after a DB
+        reset), the method reads the repo URL and active branch from disk and
+        inserts a new ``GitFolder`` record automatically.
+        """
         with get_session() as session:
             folder = session.query(GitFolder).filter_by(workspace_path=workspace_path).first()
-            if folder is None:
-                raise ValueError(f"No git folder registered at '{workspace_path}'.")
-            folder.git_connection_id = connection_id
+            if folder is not None:
+                folder.git_connection_id = connection_id
+                return
+
+            full_path = self._workspace_root / workspace_path
+            try:
+                repo = gitpython.Repo(str(full_path))
+                repo_url = self._strip_credentials_from_url(repo.remotes.origin.url)
+                branch = repo.active_branch.name
+            except Exception as exc:
+                raise ValueError(
+                    f"Cannot register '{workspace_path}': not a valid git repository — {exc}"
+                ) from exc
+
+            session.add(
+                GitFolder(
+                    workspace_path=workspace_path,
+                    git_connection_id=connection_id,
+                    repo_url=repo_url,
+                    branch=branch,
+                )
+            )
+
+    @staticmethod
+    def _strip_credentials_from_url(raw_url: str) -> str:
+        """Return the URL with any embedded username/token removed."""
+        from urllib.parse import urlparse  # noqa: PLC0415
+
+        parsed = urlparse(raw_url)
+        if not parsed.hostname:
+            return raw_url
+        host_with_port = f"{parsed.hostname}:{parsed.port}" if parsed.port else parsed.hostname
+        return parsed._replace(netloc=host_with_port).geturl()
 
     def get_connection_id(self, workspace_path: str) -> int | None:
         """Return the git_connection_id for a workspace folder, or None."""

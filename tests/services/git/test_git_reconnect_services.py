@@ -49,11 +49,11 @@ class TestUpdateToken:
             service.update_token(99, "token")
 
 
-class TestReassignConnection:
+class TestRegisterOrReassign:
     def _make_service(self, tmp_path) -> GitFolderService:
         return GitFolderService(str(tmp_path))
 
-    def test_updates_git_connection_id(self, tmp_path):
+    def test_updates_connection_when_folder_already_registered(self, tmp_path):
         service = self._make_service(tmp_path)
 
         mock_folder = MagicMock()
@@ -65,11 +65,40 @@ class TestReassignConnection:
         mock_session.query.return_value.filter_by.return_value.first.return_value = mock_folder
 
         with patch("app.services.git.folder_service.get_session", return_value=mock_session):
-            service.reassign_connection("my-repo", 2)
+            service.register_or_reassign("my-repo", 2)
 
         assert mock_folder.git_connection_id == 2
 
-    def test_raises_if_folder_not_found(self, tmp_path):
+    def test_creates_record_when_folder_not_registered(self, tmp_path):
+        service = self._make_service(tmp_path)
+
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session)
+        mock_session.__exit__ = MagicMock(return_value=False)
+        mock_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        mock_remote = MagicMock()
+        mock_remote.url = "https://user:token@github.com/org/repo.git"
+
+        mock_repo = MagicMock()
+        mock_repo.remotes.origin = mock_remote
+        mock_repo.active_branch.name = "main"
+
+        with (
+            patch("app.services.git.folder_service.get_session", return_value=mock_session),
+            patch("app.services.git.folder_service.gitpython.Repo", return_value=mock_repo),
+        ):
+            service.register_or_reassign("new-repo", 3)
+
+        mock_session.add.assert_called_once()
+        added_folder = mock_session.add.call_args[0][0]
+        assert added_folder.workspace_path == "new-repo"
+        assert added_folder.git_connection_id == 3
+        assert "token" not in added_folder.repo_url
+        assert added_folder.repo_url == "https://github.com/org/repo.git"
+        assert added_folder.branch == "main"
+
+    def test_raises_if_not_a_git_repository(self, tmp_path):
         service = self._make_service(tmp_path)
 
         mock_session = MagicMock()
@@ -79,9 +108,13 @@ class TestReassignConnection:
 
         with (
             patch("app.services.git.folder_service.get_session", return_value=mock_session),
-            pytest.raises(ValueError, match="No git folder registered"),
+            patch(
+                "app.services.git.folder_service.gitpython.Repo",
+                side_effect=Exception("not a repo"),
+            ),
+            pytest.raises(ValueError, match="not a valid git repository"),
         ):
-            service.reassign_connection("missing", 5)
+            service.register_or_reassign("bad-path", 1)
 
 
 class TestGetConnectionId:

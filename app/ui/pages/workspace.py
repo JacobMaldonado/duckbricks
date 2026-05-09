@@ -273,6 +273,18 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
 def _render_context_menu(node: WorkspaceNode, tree_container: ui.column) -> None:
     with ui.button(icon="more_vert").props("flat dense size=xs color=grey-7"):
         with ui.menu():
+            if node.is_dir:
+                ui.menu_item(
+                    "New File",
+                    on_click=lambda n=node: _open_new_file_dialog(n.path),
+                    auto_close=True,
+                )
+                ui.menu_item(
+                    "New Folder",
+                    on_click=lambda n=node: _open_new_folder_dialog(n.path),
+                    auto_close=True,
+                )
+                ui.separator()
             ui.menu_item(
                 "Rename",
                 on_click=lambda n=node, c=tree_container: _rename_dialog(n, c),
@@ -748,12 +760,16 @@ def _do_delete(node: WorkspaceNode) -> None:
         ui.notification(f"Delete failed: {exc}", type="negative")
 
 
-def _open_new_file_dialog() -> None:
+def _open_new_file_dialog(parent_path: str = "") -> None:
+    title = f"New File in {Path(parent_path).name}" if parent_path else "New File"
+    prefill = f"{parent_path}/" if parent_path else ""
+    placeholder = f"{parent_path}/my_script.py" if parent_path else "queries/my_query.sql"
     with ui.dialog() as dialog, ui.card().style("min-width: 400px"):
-        ui.label("New File").classes("text-h6")
+        ui.label(title).classes("text-h6")
         path_input = ui.input(
             "File path (e.g. folder/my_query.sql)",
-            placeholder="queries/my_query.sql",
+            placeholder=placeholder,
+            value=prefill,
         ).classes("w-full")
         ui.label("Allowed extensions: .sql .py .ipynb .md .txt").classes("text-caption text-grey-6")
         with ui.row().classes("justify-end gap-2 q-mt-md"):
@@ -780,10 +796,17 @@ def _create_new_file(relative_path: str, dialog) -> None:
         ui.notification(f"Error: {exc}", type="negative")
 
 
-def _open_new_folder_dialog() -> None:
+def _open_new_folder_dialog(parent_path: str = "") -> None:
+    title = f"New Folder in {Path(parent_path).name}" if parent_path else "New Folder"
+    prefill = f"{parent_path}/" if parent_path else ""
+    placeholder = f"{parent_path}/sub_folder" if parent_path else "my_folder/sub"
     with ui.dialog() as dialog, ui.card().style("min-width: 400px"):
-        ui.label("New Folder").classes("text-h6")
-        path_input = ui.input("Folder path (e.g. my_folder/sub)").classes("w-full")
+        ui.label(title).classes("text-h6")
+        path_input = ui.input(
+            "Folder path (e.g. my_folder/sub)",
+            placeholder=placeholder,
+            value=prefill,
+        ).classes("w-full")
         with ui.row().classes("justify-end gap-2 q-mt-md"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
             ui.button(

@@ -69,3 +69,31 @@ def test_inject_token_leaves_ssh_url_unchanged():
     url = "git@github.com:user/repo.git"
     result = provider._inject_token_into_url(url)
     assert result == url
+
+
+class TestGetAuthorIdentity:
+    def test_returns_login_and_email_when_email_is_set(self):
+        provider = _make_provider()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"login": "jacob", "id": 42, "email": "jacob@example.com"}
+        with patch.object(provider, "_authenticated_get", return_value=mock_response):
+            name, email = provider.get_author_identity()
+        assert name == "jacob"
+        assert email == "jacob@example.com"
+
+    def test_falls_back_to_noreply_when_email_is_null(self):
+        provider = _make_provider()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"login": "jacob", "id": 42, "email": None}
+        with patch.object(provider, "_authenticated_get", return_value=mock_response):
+            name, email = provider.get_author_identity()
+        assert name == "jacob"
+        assert email == "42+jacob@users.noreply.github.com"
+
+    def test_falls_back_to_noreply_when_email_is_missing(self):
+        provider = _make_provider()
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"login": "jacob", "id": 42}
+        with patch.object(provider, "_authenticated_get", return_value=mock_response):
+            name, email = provider.get_author_identity()
+        assert email == "42+jacob@users.noreply.github.com"

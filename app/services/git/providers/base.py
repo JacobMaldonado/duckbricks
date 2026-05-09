@@ -37,5 +37,9 @@ class GitProvider(ABC):
         """Return repo_url with credentials injected for authentication."""
 
     @abstractmethod
+    def get_author_identity(self) -> tuple[str, str]:
+        """Return (name, email) representing the authenticated user's git identity."""
+
+    @abstractmethod
     def provider_type(self) -> str:
         """Return the canonical provider type identifier (e.g. 'github')."""

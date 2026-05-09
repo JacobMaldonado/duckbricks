@@ -176,7 +176,12 @@ class GitFolderService:
 
         self._assert_remote_is_empty(auth_url, folder_path)
 
+        author_name, author_email = provider.get_author_identity()
+
         repo = gitpython.Repo.init(str(full_path))
+        with repo.config_writer() as cfg:
+            cfg.set_value("user", "name", author_name)
+            cfg.set_value("user", "email", author_email)
         repo.git.symbolic_ref("HEAD", f"refs/heads/{branch}")
         repo.git.remote("add", "origin", repo_url)
         repo.git.add("-A")

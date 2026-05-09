@@ -97,11 +97,20 @@ class TestConvertToGit:
 
         mock_provider = MagicMock()
         mock_provider.build_authenticated_url.return_value = "https://token@github.com/u/r"
+        mock_provider.get_author_identity.return_value = (
+            "jacob",
+            "42+jacob@users.noreply.github.com",
+        )
 
         mock_git_cls = MagicMock()
         mock_git_cls.return_value.ls_remote.return_value = ""
 
+        mock_cfg = MagicMock()
+        mock_cfg.__enter__ = MagicMock(return_value=mock_cfg)
+        mock_cfg.__exit__ = MagicMock(return_value=False)
+
         mock_repo_instance = MagicMock()
+        mock_repo_instance.config_writer.return_value = mock_cfg
         mock_repo_init = MagicMock(return_value=mock_repo_instance)
 
         mock_session = self._mock_session()
@@ -123,6 +132,8 @@ class TestConvertToGit:
             service.convert_to_git("project", 2, "https://github.com/u/r", "main")
 
         mock_repo_init.assert_called_once_with(str(folder))
+        mock_cfg.set_value.assert_any_call("user", "name", "jacob")
+        mock_cfg.set_value.assert_any_call("user", "email", "42+jacob@users.noreply.github.com")
         mock_repo_instance.git.symbolic_ref.assert_called_once_with("HEAD", "refs/heads/main")
         mock_repo_instance.git.remote.assert_called_once_with(
             "add", "origin", "https://github.com/u/r"

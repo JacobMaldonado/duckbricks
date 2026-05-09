@@ -49,6 +49,21 @@ class GitHubPatProvider(GitProvider):
         """Return repo_url with the PAT injected for HTTPS authentication."""
         return self._inject_token_into_url(repo_url)
 
+    def get_author_identity(self) -> tuple[str, str]:
+        """Return (login, email) for the authenticated GitHub user.
+
+        Falls back to GitHub's no-reply address when the user's email is
+        private or not set.
+        """
+        response = self._authenticated_get("/user")
+        response.raise_for_status()
+        data = response.json()
+        name: str = data["login"]
+        email: str | None = data.get("email")
+        if not email:
+            email = f"{data['id']}+{data['login']}@users.noreply.github.com"
+        return name, email
+
     def _authenticated_get(self, path: str) -> httpx.Response:
         with httpx.Client(base_url=self._host) as client:
             return client.get(

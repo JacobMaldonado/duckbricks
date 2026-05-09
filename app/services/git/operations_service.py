@@ -97,7 +97,7 @@ class GitOperationsService:
     def stage_files(self, folder_path: str, file_paths: list[str]) -> None:
         """Stage the specified files for commit."""
         repo = self._open_repo(folder_path)
-        repo.index.add(file_paths)
+        repo.git.add(file_paths)
 
     def commit_and_push(self, folder_path: str, message: str, file_paths: list[str]) -> None:
         """Stage the given files, commit with the provided message, then push.
@@ -109,7 +109,7 @@ class GitOperationsService:
             raise ValueError("Commit message must not be empty.")
 
         repo = self._open_repo(folder_path)
-        repo.index.add(file_paths)
+        repo.git.add(file_paths)
         repo.index.commit(message)
 
         if self._has_upstream(repo):

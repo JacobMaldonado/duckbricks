@@ -213,8 +213,18 @@ class TestCommitAndPush:
 
         service.commit_and_push("repo", "fix: small fix", ["file.py"])
 
-        repo.index.add.assert_called_once_with(["file.py"])
+        repo.git.add.assert_called_once_with(["file.py"])
         repo.index.commit.assert_called_once_with("fix: small fix")
+
+    def test_stages_deleted_file_without_error(self, mock_repo):
+        """Deleted files must be stageable via git.add without FileNotFoundError."""
+        service, repo, _ = mock_repo
+        repo.remotes = []
+
+        service.commit_and_push("repo", "fix: remove old file", ["deleted_file.py"])
+
+        repo.git.add.assert_called_once_with(["deleted_file.py"])
+        repo.index.commit.assert_called_once_with("fix: remove old file")
 
 
 class TestChangedFileModel:

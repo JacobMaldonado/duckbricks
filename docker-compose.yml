@@ -12,6 +12,7 @@ services:
       MARIMO_INTERNAL_URL: http://marimo:2718
       PREFECT_API_URL: http://prefect-server:4200/api
       DUCKBRICKS_WORKSPACE_PATH: /data/workspace
+      DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -67,6 +68,7 @@ services:
       MARIMO_URL: /marimo
       MARIMO_INTERNAL_URL: http://marimo:2718
       DUCKBRICKS_WORKSPACE_PATH: /data/workspace
+      DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
     env_file:
       - .env
     volumes:
@@ -81,16 +83,16 @@ services:
   marimo:
     image: python:3.12-slim
     command: >
-      sh -c "pip install --no-cache-dir marimo duckdb uv sqlglot &&
-             until [ -f /data/.duckbricks/start_marimo.py ]; do echo 'Waiting for DuckBricks helpers...'; sleep 2; done &&
-             python /data/.duckbricks/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718 --base-url /marimo"
+      sh -c "pip install --no-cache-dir marimo duckdb uv sqlglot duckbricks-utils &&
+             python /app/start_marimo.py edit --sandbox --no-token --host 0.0.0.0 --port 2718 --base-url /marimo"
     working_dir: /data/workspace
     volumes:
       - duckbricks-data:/data
+      - ./app/helpers/start_marimo.py:/app/start_marimo.py:ro
     env_file:
       - .env
     environment:
-      PYTHONPATH: /data/.duckbricks
+      DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
     restart: unless-stopped
 
 volumes:

@@ -14,6 +14,23 @@ except Exception:
 
 DATA_PATH = os.getenv("DUCKBRICKS_DATA_PATH", "/data/parquet/")
 DUCKLAKE_NAME = os.getenv("DUCKBRICKS_DUCKLAKE_NAME", "duckbricks")
+STORAGE_BACKEND: str = os.getenv("DUCKBRICKS_STORAGE_BACKEND", "local")
+
+# S3 / MinIO / R2
+AWS_ACCESS_KEY_ID: str = os.getenv("AWS_ACCESS_KEY_ID", "")
+AWS_SECRET_ACCESS_KEY: str = os.getenv("AWS_SECRET_ACCESS_KEY", "")
+AWS_REGION: str = os.getenv("AWS_REGION", "us-east-1")
+MINIO_ENDPOINT: str = os.getenv("MINIO_ENDPOINT", "")
+R2_ACCOUNT_ID: str = os.getenv("R2_ACCOUNT_ID", "")
+
+# GCS
+GCS_KEY_ID: str = os.getenv("GCS_KEY_ID", "")
+GCS_SECRET: str = os.getenv("GCS_SECRET", "")
+
+# Azure
+AZURE_CONNECTION_STRING: str = os.getenv("AZURE_CONNECTION_STRING", "")
+AZURE_ACCOUNT: str = os.getenv("AZURE_ACCOUNT", "")
+AZURE_KEY: str = os.getenv("AZURE_KEY", "")
 
 DUCKLAKE_PG_HOST: str = os.getenv("DUCKLAKE_PG_HOST", "localhost")
 DUCKLAKE_PG_PORT: int = int(os.getenv("DUCKLAKE_PG_PORT", "5432"))
@@ -32,7 +49,6 @@ DATABASE_URL: str = os.getenv(
 )
 
 WORKSPACE_PATH: str = os.getenv("DUCKBRICKS_WORKSPACE_PATH", "./workspace")
-HELPERS_PATH: str = os.getenv("DUCKBRICKS_HELPERS_PATH", "/data/.duckbricks")
 
 MARIMO_URL: str = os.getenv("MARIMO_URL", "/marimo")
 MARIMO_INTERNAL_URL: str = os.getenv("MARIMO_INTERNAL_URL", "http://localhost:2718")

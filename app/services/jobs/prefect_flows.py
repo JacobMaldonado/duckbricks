@@ -15,19 +15,9 @@ def _bootstrap_worker_services() -> None:
     The worker process is started independently of the main app, so it does not
     go through the NiceGUI startup lifecycle. This function replicates the
     essential initialization steps so task executors have everything they need.
-
-    It also ensures HELPERS_PATH is on sys.path so that workspace helper
-    modules (e.g. duckbricks_utils) are importable from within task scripts.
     """
-    import sys
-
-    from app.config import HELPERS_PATH
     from app.services.database.session import init_database
     from app.services.metastore import manager
-
-    if HELPERS_PATH not in sys.path:
-        sys.path.insert(0, HELPERS_PATH)
-        _log.info("Worker: added %s to sys.path.", HELPERS_PATH)
 
     try:
         init_database()

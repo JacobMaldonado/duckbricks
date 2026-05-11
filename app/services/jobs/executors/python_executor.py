@@ -71,12 +71,7 @@ class PythonTaskExecutor(TaskExecutor):
         instead of batching into the OS pipe buffer. Each line is printed so
         Prefect's log_prints=True captures it as a structured log record.
         """
-        from app.config import HELPERS_PATH
-
-        python_path = os.pathsep.join(
-            filter(None, [HELPERS_PATH, os.environ.get("PYTHONPATH", "")])
-        )
-        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": python_path}
+        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
         process = subprocess.Popen(  # noqa: S603
             self._build_command(file_path),
             stdout=subprocess.PIPE,

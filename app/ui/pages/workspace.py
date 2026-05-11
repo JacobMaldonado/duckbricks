@@ -39,6 +39,7 @@ _MARIMO_NOTEBOOK_TEMPLATE = """\
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
+#     "duckbricks-utils",
 #     "duckdb",
 #     "sqlglot",
 # ]

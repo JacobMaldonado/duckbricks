@@ -1,7 +1,6 @@
 """DuckBricks — NiceGUI application entry point."""
 
 import logging
-import shutil
 from pathlib import Path
 
 from fastapi import Request, WebSocket
@@ -9,7 +8,7 @@ from nicegui import app, ui
 
 from app.api.marimo_proxy import proxy_http_request, proxy_websocket
 from app.api.prefect_proxy import proxy_prefect_http
-from app.config import HELPERS_PATH, HOST, PORT, RELOAD, WORKSPACE_PATH
+from app.config import HOST, PORT, RELOAD, WORKSPACE_PATH
 from app.services.completion.schema_provider import CompletionSchemaProvider
 from app.services.database.session import init_database
 from app.services.metastore import manager
@@ -27,22 +26,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-_HELPERS_DIR = Path(__file__).parent / "helpers"
-
-
-def _deploy_workspace_helpers() -> None:
-    """Copy all helper modules to the shared helpers directory on the data volume."""
-    dest = Path(HELPERS_PATH)
-    dest.mkdir(parents=True, exist_ok=True)
-    for source_file in _HELPERS_DIR.glob("*.py"):
-        if source_file.name != "__init__.py":
-            shutil.copy(source_file, dest / source_file.name)
-
 
 async def startup():
     """Auto-initialize metastore and application database on startup."""
     Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
-    _deploy_workspace_helpers()
     try:
         manager.initialize()
     except Exception as e:
@@ -129,4 +116,4 @@ def settings():
 
 if __name__ in {"__main__", "__mp_main__"}:
     print(f"Starting DuckBricks with reload={RELOAD}...")
-    ui.run(title="DuckBricks", host=HOST, port=int(PORT), reload=RELOAD)
+    ui.run(title="DuckBricks", host=HOST, port=int(PORT), reload=RELOAD, reconnect_timeout=300)

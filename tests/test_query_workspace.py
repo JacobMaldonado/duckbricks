@@ -15,6 +15,13 @@ def test_build_catalog_tree_is_importable():
     assert callable(_build_catalog_tree)
 
 
+def test_build_tab_bar_is_importable():
+    """_build_tab_bar helper should be importable."""
+    from app.ui.pages.query import _build_tab_bar
+
+    assert callable(_build_tab_bar)
+
+
 def test_find_node_finds_top_level():
     """_find_node should find top-level nodes."""
     from app.pages.query import _find_node

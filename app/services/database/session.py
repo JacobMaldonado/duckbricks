@@ -74,4 +74,16 @@ def _apply_migrations(engine) -> None:
                 ")"
             )
         )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS app.query_tabs ("
+                "  id SERIAL PRIMARY KEY,"
+                "  name VARCHAR(255) NOT NULL DEFAULT 'Query 1',"
+                "  sql_content TEXT NOT NULL DEFAULT '',"
+                "  position INTEGER NOT NULL DEFAULT 0,"
+                "  created_at TIMESTAMP DEFAULT now(),"
+                "  updated_at TIMESTAMP DEFAULT now()"
+                ")"
+            )
+        )
         conn.commit()

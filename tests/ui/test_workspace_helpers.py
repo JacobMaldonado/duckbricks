@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from app.ui.workspace_utils import folder_name_from_url
 
 

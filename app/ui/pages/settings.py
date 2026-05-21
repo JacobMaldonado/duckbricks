@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from nicegui import ui
 
+from app.config import STORAGE_BACKEND
 from app.services.git.connection_service import GitConnectionService
 from app.services.git.providers.factory import GitProviderFactory
 from app.ui.components.layout import layout_frame
@@ -16,7 +17,38 @@ def settings_page() -> None:
     layout_frame("Settings")
     with ui.column().classes("w-full q-pa-lg gap-4"):
         ui.label("Settings").classes("text-h5 text-weight-bold")
+        _render_storage_panel()
         _render_git_connections_panel()
+
+
+def _render_storage_panel() -> None:
+    from duckbricks_utils.storage.factory import StorageBackendFactory
+
+    backend = StorageBackendFactory.from_env()
+    supported = StorageBackendFactory.supported_backends()
+
+    backend_icons: dict[str, str] = {
+        "local": "folder",
+        "s3": "cloud",
+        "minio": "storage",
+        "r2": "public",
+        "gcs": "cloud_queue",
+        "azure": "cloud_circle",
+    }
+    icon = backend_icons.get(STORAGE_BACKEND, "storage")
+
+    with ui.card().classes("w-full"):
+        ui.label("Storage").classes("text-h6 q-mb-sm")
+        with ui.row().classes("items-center gap-3"):
+            ui.icon(icon, color="blue-7").classes("text-xl")
+            with ui.column().classes("gap-0"):
+                ui.label(f"Active backend: {STORAGE_BACKEND}").classes("text-weight-medium")
+                ui.label(f"Data path: {backend.data_path()}").classes("text-caption text-grey-6")
+        ui.separator().classes("q-my-sm")
+        ui.label(
+            f"Supported backends: {', '.join(supported)}. "
+            "Change DUCKBRICKS_STORAGE_BACKEND in your .env and restart to switch."
+        ).classes("text-caption text-grey-6")
 
 
 def _render_git_connections_panel() -> None:

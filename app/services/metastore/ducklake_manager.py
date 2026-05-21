@@ -3,15 +3,16 @@
 import threading
 
 import duckdb
+from duckbricks_utils.storage.factory import StorageBackendFactory
 
 from app.config import (
-    DATA_PATH,
     DUCKLAKE_NAME,
     DUCKLAKE_PG_DATABASE,
     DUCKLAKE_PG_HOST,
     DUCKLAKE_PG_PASSWORD,
     DUCKLAKE_PG_PORT,
     DUCKLAKE_PG_USER,
+    STORAGE_BACKEND,
 )
 
 
@@ -22,11 +23,6 @@ class MetastoreManager:
         self._lock = threading.Lock()
         self._conn: duckdb.DuckDBPyConnection | None = None
         self._initialized = False
-
-    def _ensure_data_path(self) -> None:
-        import os
-
-        os.makedirs(DATA_PATH, exist_ok=True)
 
     def _build_catalog_connection_string(self) -> str:
         return (
@@ -40,18 +36,21 @@ class MetastoreManager:
     def initialize(self) -> dict:
         """Initialize the DuckLake metastore backed by PostgreSQL."""
         with self._lock:
-            self._ensure_data_path()
             if self._conn is not None:
                 self._conn.close()
 
+            backend = StorageBackendFactory.from_env()
+            storage_path = backend.data_path()
+
             self._conn = duckdb.connect()
+            backend.configure(self._conn)
             self._conn.execute("INSTALL ducklake; LOAD ducklake;")
             self._conn.execute("INSTALL postgres; LOAD postgres;")
 
             catalog_dsn = self._build_catalog_connection_string()
             self._conn.execute(
                 f"ATTACH 'ducklake:postgres:{catalog_dsn}' AS {DUCKLAKE_NAME} "
-                f"(DATA_PATH '{DATA_PATH}', AUTOMATIC_MIGRATION TRUE)"
+                f"(DATA_PATH '{storage_path}', AUTOMATIC_MIGRATION TRUE)"
             )
             self._conn.execute(f"USE {DUCKLAKE_NAME}")
             self._initialized = True
@@ -59,12 +58,14 @@ class MetastoreManager:
 
     def status(self) -> dict:
         """Return metastore status."""
+        backend = StorageBackendFactory.from_env()
         return {
             "initialized": self._initialized,
             "catalog_backend": "postgresql",
             "catalog_host": DUCKLAKE_PG_HOST,
             "catalog_database": DUCKLAKE_PG_DATABASE,
-            "data_path": DATA_PATH,
+            "storage_backend": STORAGE_BACKEND,
+            "data_path": backend.data_path(),
             "ducklake_name": DUCKLAKE_NAME,
         }
 
@@ -313,7 +314,7 @@ class MetastoreManager:
                 "table": table,
                 "catalog_backend": "postgresql",
                 "catalog_host": DUCKLAKE_PG_HOST,
-                "data_path": DATA_PATH,
+                "data_path": StorageBackendFactory.from_env().data_path(),
                 "file_count": None,
                 "total_size_bytes": None,
             }

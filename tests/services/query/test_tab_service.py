@@ -94,7 +94,7 @@ class TestCreateTab:
                 return_value=created_tab,
             ),
         ):
-            result = service.create_tab("My Query", "SELECT 1")
+            service.create_tab("My Query", "SELECT 1")
 
         session.add.assert_called_once_with(created_tab)
         session.flush.assert_called_once()

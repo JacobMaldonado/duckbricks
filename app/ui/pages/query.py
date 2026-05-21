@@ -147,6 +147,7 @@ def query_workspace():
         all_tabs = tab_service.list_tabs()
 
     active_tab_id: list[int] = [all_tabs[0].id]
+    _add_tab_holder: list = [None]
 
     with (
         ui.splitter(value=20, limits=(10, 40))
@@ -186,6 +187,10 @@ def query_workspace():
                                 .tooltip("Shift+Enter")
                             )
                             status_label = ui.label("").classes("text-caption text-grey")
+                            ui.space()
+                            ui.button(icon="add", on_click=lambda: _add_tab_holder[0]()).props(
+                                "flat dense round size=sm"
+                            ).tooltip("New tab")
 
                         initial_tab = all_tabs[0]
                         editor = (
@@ -283,7 +288,7 @@ def query_workspace():
             on_insert_to_editor=insert_into_editor,
         )
 
-    _build_tab_bar(tab_bar_row, all_tabs, active_tab_id, editor, tab_service)
+    _build_tab_bar(tab_bar_row, all_tabs, active_tab_id, editor, tab_service, _add_tab_holder)
 
 
 def _build_tab_bar(
@@ -292,8 +297,14 @@ def _build_tab_bar(
     active_tab_id: list[int],
     editor,
     tab_service: QueryTabService,
+    add_tab_holder: list,
 ) -> None:
-    """Render the tab bar and wire all tab interactions."""
+    """Render the tab bar chips and wire all tab interactions.
+
+    The caller is responsible for providing ``add_tab_holder``, a single-element
+    list that will be populated with the ``_add_tab`` callable so external UI
+    elements (e.g. a toolbar button) can trigger new-tab creation.
+    """
     tab_chips: dict[int, ui.element] = {}
 
     def _save_active_content() -> None:
@@ -339,6 +350,8 @@ def _build_tab_bar(
         new_tab = tab_service.create_tab(name)
         _render_tab_chip(new_tab.id, new_tab.name)
         _activate_tab(new_tab.id)
+
+    add_tab_holder[0] = _add_tab
 
     def _render_tab_chip(tab_id: int, tab_name: str) -> None:
         with container:
@@ -395,8 +408,3 @@ def _build_tab_bar(
 
     for tab in initial_tabs:
         _render_tab_chip(tab.id, tab.name)
-
-    with container:
-        ui.button(icon="add", on_click=_add_tab).props("flat dense round size=sm").tooltip(
-            "New tab"
-        )

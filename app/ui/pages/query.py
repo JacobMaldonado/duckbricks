@@ -170,16 +170,10 @@ def query_workspace():
             ).classes("w-full h-full") as v_splitter:
                 with v_splitter.before:
                     with ui.column().classes("w-full h-full p-0 gap-0"):
-                        tab_bar_row = (
-                            ui.row()
-                            .classes("w-full items-center q-pa-xs bg-grey-1 gap-1 query-tab-bar")
-                            .style("flex-shrink: 0; flex-wrap: nowrap; overflow-x: auto;")
-                        )
-
                         with (
                             ui.row()
-                            .classes("w-full items-center q-pa-xs bg-grey-1 gap-2")
-                            .style("flex-shrink: 0")
+                            .classes("w-full items-center q-pa-xs bg-grey-1 gap-2 query-tab-bar")
+                            .style("flex-shrink: 0; flex-wrap: nowrap; overflow-x: auto;")
                         ):
                             execute_btn = (
                                 ui.button("Execute", icon="play_arrow")
@@ -187,7 +181,11 @@ def query_workspace():
                                 .tooltip("Shift+Enter")
                             )
                             status_label = ui.label("").classes("text-caption text-grey")
-                            ui.space()
+                            tab_bar_row = (
+                                ui.row()
+                                .classes("items-center gap-1")
+                                .style("flex-wrap: nowrap; overflow-x: auto;")
+                            )
                             ui.button(icon="add", on_click=lambda: _add_tab_holder[0]()).props(
                                 "flat dense round size=sm"
                             ).tooltip("New tab")

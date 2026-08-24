@@ -1,7 +1,7 @@
 # Technical Review Backlog
 
-**Review snapshot:** 2026-08-24  
-**Baseline:** `f6fd7af`  
+**Review snapshot:** 2026-08-24
+**Baseline:** `f6fd7af`
 **Status:** Proposed work; each item needs its own implementation plan
 
 This file preserves the recommendations that remain after the deployment defaults, startup
@@ -211,4 +211,3 @@ The following findings are intentionally excluded from the remaining backlog:
 - Liveness/readiness endpoints and Compose health wiring.
 - Passing test, Ruff, formatting, mypy, pre-commit, and Compose validation gates.
 - Deployment and health documentation aligned with the current five-service topology.
-

@@ -1,7 +1,7 @@
 # DuckBricks Design System
 
-**Version:** 1.1.0
-**Last Updated:** August 23, 2026
+**Version:** 1.1.1
+**Last Updated:** August 24, 2026
 
 A design system for the DuckBricks data platform. This document describes the visual language and styling conventions used across the NiceGUI application, and is the reference for any UI work.
 
@@ -155,7 +155,9 @@ Common modifiers: `flat dense round`, `color=white` (on the header).
 ### Navigation
 
 - **Header:** `ui.header().classes("bg-primary text-white items-center")` — brand bar with menu toggle, title, and version label.
-- **Drawer:** `ui.left_drawer` with `ui.list` + `ui.item` entries; active page highlighted via `ui.icon` + label.
+- **Drawer:** `ui.left_drawer` with `ui.list` + `ui.item` entries; the active page uses a
+  `bg-blue-1` background with primary-colored icon and label. A bottom control switches between
+  icons with labels and an icons-only mode that temporarily expands on hover.
 
 ### Tables
 
@@ -270,5 +272,6 @@ DuckBricks design aims to be:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1.1 | August 24, 2026 | Documented active-route highlighting and the user-controlled compact navigation mode. |
 | 1.1.0 | August 23, 2026 | Aligned to actual NiceGUI/Quasar + Material Icons stack; corrected colors, icons, and code conventions; removed Tailwind/BEM/Lucide references. |
 | 1.0.0 | March 14, 2026 | Initial design system release. |

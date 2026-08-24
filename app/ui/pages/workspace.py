@@ -388,24 +388,6 @@ def _render_editor_panel() -> None:
         ui.context.client.storage["_ws_drag_source"] = ""
 
 
-def _on_drawer_mouseenter() -> None:
-    storage = ui.context.client.storage
-    if not storage.get("_ws_marimo_active"):
-        return
-    drawer = storage.get("_ws_nav_drawer")
-    if drawer:
-        drawer.props(remove="mini").classes(remove="pl-4")
-
-
-def _on_drawer_mouseleave() -> None:
-    storage = ui.context.client.storage
-    if not storage.get("_ws_marimo_active"):
-        return
-    drawer = storage.get("_ws_nav_drawer")
-    if drawer:
-        drawer.props(add="mini").classes(add="pl-4")
-
-
 def _activate_marimo_mode(relative_path: str) -> None:
     marimo_file_url = f"{MARIMO_URL}/?file={urllib.parse.quote(relative_path)}"
     storage = ui.context.client.storage
@@ -414,15 +396,6 @@ def _activate_marimo_mode(relative_path: str) -> None:
     label = cast(ui.label | None, storage.get("_ws_label"))
     if label:
         label.set_text(relative_path)
-
-    drawer = storage.get("_ws_nav_drawer")
-    if drawer:
-        storage["_ws_marimo_active"] = True
-        drawer.props(add="mini").classes(add="pl-4")
-        if not storage.get("_ws_drawer_hover_registered"):
-            storage["_ws_drawer_hover_registered"] = True
-            drawer.on("mouseenter", _on_drawer_mouseenter)
-            drawer.on("mouseleave", _on_drawer_mouseleave)
 
     ui.run_javascript(
         "document.body.classList.add('ws-marimo-mode');"
@@ -433,11 +406,6 @@ def _activate_marimo_mode(relative_path: str) -> None:
 
 def _deactivate_marimo_mode() -> None:
     storage = ui.context.client.storage
-    storage["_ws_marimo_active"] = False
-
-    drawer = storage.get("_ws_nav_drawer")
-    if drawer:
-        drawer.props(remove="mini").classes(remove="pl-4")
 
     ui.run_javascript(
         "document.body.classList.remove('ws-marimo-mode');"

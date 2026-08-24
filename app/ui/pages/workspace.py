@@ -16,6 +16,7 @@ from app.services.git.folder_service import GitFolderService
 from app.services.workspace import WorkspaceService
 from app.services.workspace.workspace_service import WorkspaceNode
 from app.ui.components.layout import layout_frame
+from app.ui.workspace_layout import WORKSPACE_CODEMIRROR_LAYOUT_CSS, WORKSPACE_VIEWPORT_STYLE
 from app.ui.workspace_utils import folder_name_from_url as _folder_name_from_url
 
 _workspace_service = WorkspaceService(WORKSPACE_PATH)
@@ -57,22 +58,14 @@ if __name__ == "__main__":
     app.run()
 """
 
-_DRAG_DROP_JS = """
+_DRAG_DROP_JS = (
+    """
 <style>
 .cm-editor .cm-tooltip-autocomplete { z-index: 9999 !important; }
 .cm-editor { overflow: visible !important; }
-.ws-editor .nicegui-codemirror {
-    flex: 1 1 0% !important;
-    min-height: 0 !important;
-    display: flex !important;
-    flex-direction: column !important;
-}
-.ws-editor .cm-editor {
-    flex: 1 1 0% !important;
-    min-height: 0 !important;
-    height: auto !important;
-}
-.ws-editor .cm-scroller { overflow: auto !important; }
+"""
+    + WORKSPACE_CODEMIRROR_LAYOUT_CSS
+    + """
 .ws-row-drop-target { outline: 2px dashed #1976d2 !important; background: #e3f2fd !important; }
 
 /* File tree panel: normal vs collapsed */
@@ -132,6 +125,7 @@ document.addEventListener("dragover", function(e) {
 });
 </script>
 """
+)
 
 
 def workspace_page() -> None:
@@ -139,7 +133,7 @@ def workspace_page() -> None:
     layout_frame("Workspace")
     ui.add_head_html(_DRAG_DROP_JS)
 
-    with ui.row().classes("w-full h-full gap-0").style("height: calc(100vh - 100px)"):
+    with ui.row().classes("w-full h-full gap-0").style(WORKSPACE_VIEWPORT_STYLE):
         _render_file_tree_panel()
         _render_editor_panel()
 
@@ -377,23 +371,12 @@ def _render_editor_panel() -> None:
                     "flat color=grey-7"
                 ).classes("ws-edit-source-btn").tooltip("Back to code editor")
 
-        with (
-            ui.element("div")
-            .classes("ws-codemirror-panel")
-            .style(
-                "flex: 1; min-height: 0; overflow: visible; display: flex;"
-                " flex-direction: column; padding: 0 16px 16px"
-            )
-        ):
-            editor = (
-                ui.codemirror(
-                    value="",
-                    language=None,
-                    theme="githubLight",
-                )
-                .classes("w-full")
-                .style("flex: 1; min-height: 0; overflow: visible")
-            )
+        with ui.element("div").classes("w-full ws-codemirror-panel").style("padding: 0 16px 16px"):
+            editor = ui.codemirror(
+                value="",
+                language=None,
+                theme="githubLight",
+            ).classes("w-full h-full")
 
         ui.element("iframe").classes("ws-marimo-iframe").style("padding: 0 16px 16px")
 

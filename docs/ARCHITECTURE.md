@@ -1,7 +1,7 @@
 # DuckBricks Architecture
 
-**Version:** 0.2.0
-**Last Updated:** 2026-03-14
+**Version:** 0.3.0
+**Last Updated:** 2026-08-24
 **Status:** Living Document
 
 ---
@@ -60,7 +60,7 @@ DuckBricks is a self-hosted data platform that provides Databricks-like function
        │                        │
        │  ┌──────────────────┐  │
        │  │ Catalog Metadata │  │
-       │  │  (.ducklake)     │  │
+       │  │  (PostgreSQL)    │  │
        │  └──────────────────┘  │
        │                        │
        │  ┌──────────────────┐  │
@@ -73,7 +73,7 @@ DuckBricks is a self-hosted data platform that provides Databricks-like function
 ### 1.3 Architectural Principles
 
 **1. Simplicity First**
-Start with the simplest solution that works. Add complexity only when requirements demand it. The current v0.1.x implementation demonstrates this: a single NiceGUI application with in-process DuckDB.
+Start with the simplest solution that works. Add complexity only when requirements demand it. The current implementation uses one NiceGUI application with in-process DuckDB, PostgreSQL-backed DuckLake metadata, and separate Prefect and Marimo services.
 
 **2. Loose Coupling via Abstraction Layers**
 Components communicate through well-defined interfaces, not concrete implementations. Storage, scheduling, and database backends must be swappable via dependency injection and adapter patterns.
@@ -86,11 +86,9 @@ Components communicate through well-defined interfaces, not concrete implementat
 
 **4. Progressive Enhancement**
 The architecture supports incremental evolution:
-- **Phase 1 (Current):** NiceGUI + DuckDB + DuckLake (file-based catalog)
-- **Phase 2:** Add PostgreSQL metastore, FastAPI REST API
-- **Phase 3:** Add Prefect for job orchestration
-- **Phase 4:** Multi-tenancy, workspaces, RBAC
-- **Phase 5:** Cloud storage backends (S3, Azure Blob, GCS)
+- **Implemented:** NiceGUI, DuckDB, PostgreSQL-backed DuckLake, Prefect 3, Marimo workspaces, Git integration, and configurable local/cloud storage
+- **Next:** Expand the FastAPI surface and add production authentication
+- **Later:** Multi-tenancy, workspace isolation, RBAC, and multi-node deployment
 
 **5. Container-First Deployment**
 All components are containerized and orchestrated via Docker Compose for local/single-node deployments. The architecture must support migration to Kubernetes for production scale-out.
@@ -119,8 +117,8 @@ NiceGUI is a Python-based UI framework that enables rapid development of web int
 
 **Architecture Integration:**
 - **Entry Point:** `app/main.py` defines page routes (`/explorer`, `/query`)
-- **Components:** Reusable UI components in `app/components/` (e.g., `hierarchy_tree.py`)
-- **Pages:** Full-page views in `app/pages/` (e.g., `explorer.py`, `query.py`)
+- **Components:** Reusable UI components in `app/ui/components/`
+- **Pages:** Full-page views in `app/ui/pages/`
 - **State Management:** NiceGUI's reactive state binding for UI updates
 - **Layout Patterns:** Two-panel layouts with `ui.splitter`, lazy-loaded tree views with `ui.tree`
 
@@ -181,10 +179,10 @@ def list_catalogs():
 DuckDB is an in-process analytical database optimized for OLAP workloads. It natively supports reading Parquet files, enabling efficient querying of DuckLake tables without data movement.
 
 **Integration Architecture:**
-- **Connection Management:** `app/services/ducklake.py` provides `DuckLakeManager` singleton
+- **Connection Management:** `app/services/metastore/ducklake_manager.py` provides the `MetastoreManager` used by the singleton in `app/services/metastore/__init__.py`
 - **Thread Safety:** Uses Python `threading.Lock` to serialize access to the DuckDB connection
 - **DuckLake Extension:** `LOAD ducklake` enables DuckLake catalog integration
-- **Catalog Attachment:** `ATTACH 'ducklake:<path>' AS <name>` mounts the DuckLake catalog
+- **Catalog Attachment:** `ATTACH 'ducklake:postgres:<dsn>' AS <name>` mounts the PostgreSQL-backed DuckLake catalog
 
 **Query Execution Flow:**
 1. User submits SQL query via NiceGUI or FastAPI
@@ -211,7 +209,6 @@ DuckLake is an open table format built for DuckDB that provides ACID transaction
 **Storage Structure:**
 ```
 /data/
-├── metastore.ducklake       # Catalog metadata (SQLite-backed)
 └── parquet/
     ├── catalog_name/
     │   ├── schema_name/
@@ -222,25 +219,25 @@ DuckLake is an open table format built for DuckDB that provides ACID transaction
 ```
 
 **Catalog Metadata:**
-- Stored in `.ducklake` file (SQLite-based catalog)
-- Tracks table schemas, partition info, file locations
-- Supports concurrent reads, serialized writes
+- Stored in PostgreSQL through DuckLake's PostgreSQL catalog integration
+- Configured independently from the application SQLAlchemy connection through `DUCKLAKE_PG_*`
+- Tracks table schemas, snapshots, partitions, and data-file locations
 
 **Parquet Files:**
 - Columnar storage format optimized for analytics
 - Compressed (Snappy by default)
 - Stored in `DATA_PATH` (configurable via `DUCKBRICKS_DATA_PATH`)
 
-**Integration with PostgreSQL Metastore (Future):**
-Currently, DuckLake's `.ducklake` catalog is the sole source of truth. In Phase 2, we'll mirror this metadata in PostgreSQL for:
-- Richer querying capabilities (e.g., search by column name across all tables)
-- Workspace-based access control (metastore entries linked to workspaces)
-- Audit logging (who created/modified tables and when)
+**PostgreSQL integration:**
+DuckLake metadata is stored directly in PostgreSQL and remains the source of truth. The SQLAlchemy
+`metastore` models exist for future application-level metadata, but no background mirror/sync process
+is currently active.
 
 **DuckLake Operations:**
 ```sql
 -- Attach catalog
-ATTACH 'ducklake:/data/metastore.ducklake' AS duckbricks (DATA_PATH '/data/parquet/');
+ATTACH 'ducklake:postgres:host=postgres port=5432 dbname=duckbricks user=duckbricks password=***'
+  AS duckbricks (DATA_PATH '/data/parquet/', AUTOMATIC_MIGRATION TRUE);
 
 -- Use catalog
 USE duckbricks;
@@ -258,28 +255,26 @@ SELECT * FROM users;
 ### 2.5 PostgreSQL (Metastore & Application Database)
 
 **Why PostgreSQL?**
-PostgreSQL provides robust relational storage for application state and metastore metadata. Unlike DuckLake's file-based catalog, PostgreSQL enables:
-- Complex queries (e.g., "find all tables with a column named 'user_id'")
-- Transactional updates across multiple entities
-- Workspace-based multi-tenancy with foreign key constraints
+PostgreSQL provides durable relational storage for both DuckLake catalog metadata and DuckBricks application state.
 
 **Database Roles:**
-1. **Metastore:** Mirror of DuckLake catalog metadata for richer query capabilities
-2. **Application DB:** User accounts, workspaces, saved queries, job definitions, query history
+1. **DuckLake catalog:** DuckLake writes its catalog tables directly through the PostgreSQL catalog adapter.
+2. **Application database:** SQLAlchemy stores jobs, tasks, query tabs, Git connections, and Git-folder registrations in the `app` schema.
 
 **Schema Design (see Section 4 for details):**
-- `metastore` schema: Catalogs, schemas, tables, columns, partitions
-- `app` schema: Users, workspaces, queries, jobs, execution logs
+- DuckLake-managed catalog tables are the source of truth for data metadata.
+- `app` schema: DuckBricks-owned application state.
+- `metastore` ORM models are reserved for future application metadata; no mirror job currently writes them.
 
 **Integration Pattern:**
-- DuckLake remains the source of truth for table data and catalog metadata
-- PostgreSQL is updated via background sync jobs (Phase 2)
-- Application state (users, workspaces, queries) lives exclusively in PostgreSQL
+- DuckDB attaches DuckLake using the `DUCKLAKE_PG_*` connection settings.
+- SQLAlchemy connects using `DATABASE_URL`.
+- Both connections point to the Compose PostgreSQL service by default but remain independently configurable.
 
 **Connection Management:**
-- Use SQLAlchemy as the ORM/abstraction layer
-- Connection pooling via `pgbouncer` or SQLAlchemy's pool
-- Migrations managed via Alembic
+- SQLAlchemy owns the application engine and session factory.
+- Startup creates the required schemas and applies the current additive migrations.
+- Alembic is installed but has not yet replaced the startup migration mechanism.
 
 ### 2.6 Prefect (Workflow Orchestration)
 
@@ -290,13 +285,13 @@ Prefect provides Pythonic workflow orchestration with a modern UI, dynamic DAGs,
 - **Scheduled Queries:** Run SQL queries on a cron schedule, save results to tables
 - **Data Pipelines:** Orchestrate multi-step ETL workflows (extract → transform → load)
 - **Data Quality Checks:** Run validation queries and alert on failures
-- **Metadata Sync:** Periodically sync DuckLake metadata to PostgreSQL
 
 **Integration Architecture:**
 - Prefect runs in a separate container (`prefect-server`)
-- DuckBricks defines Prefect flows in `app/workflows/` (Python code)
-- Flows interact with DuckBricks via the service layer (not direct DB access)
-- Job definitions stored in PostgreSQL, execution logs written to PostgreSQL
+- DuckBricks defines its flow in `app/services/jobs/prefect_flows.py`
+- The application creates and updates Prefect deployments through `PrefectApiClient`
+- The `duckbricks-worker` executes deployments from the `duckbricks-pool` work pool
+- Job definitions are stored in PostgreSQL; run state and logs are read from Prefect
 
 **Example Workflow:**
 ```python
@@ -316,8 +311,8 @@ def daily_report():
 
 **Deployment:**
 - Prefect server runs via Docker Compose
-- Workflows deployed via `prefect deploy` (code stored in Git, not Prefect's DB)
-- Execution triggered via Prefect UI, API, or cron schedules
+- Deployments are registered through the Prefect API when jobs are created or updated
+- Execution is triggered through the DuckBricks UI, Prefect UI/API, or deployment schedules
 
 ---
 
@@ -325,76 +320,44 @@ def daily_report():
 
 ### 3.1 Docker Compose Overview
 
-**Current Architecture (v0.1.x):**
+**Current Architecture:**
 ```yaml
 services:
   duckbricks:
     build: .
     ports:
-      - "8080:8000"
+      - "8082:8000"
     volumes:
       - duckbricks-data:/data
     environment:
-      - DUCKBRICKS_CATALOG_PATH=/data/metastore.ducklake
-      - DUCKBRICKS_DATA_PATH=/data/parquet/
-      - DUCKBRICKS_DUCKLAKE_NAME=duckbricks
-```
-
-**Target Architecture (Phase 2):**
-```yaml
-services:
-  duckbricks-web:
-    build: ./app
-    ports:
-      - "8080:8000"  # NiceGUI + FastAPI
-    volumes:
-      - ./app:/app  # Dev hot-reload
-    environment:
-      - DATABASE_URL=postgresql://user:pass@postgres:5432/duckbricks
-      - DUCKLAKE_CATALOG_PATH=/data/metastore.ducklake
-      - DUCKLAKE_DATA_PATH=/data/parquet/
-      - STORAGE_BACKEND=minio
-      - MINIO_ENDPOINT=minio:9000
+      DATABASE_URL: postgresql://duckbricks:duckbricks@postgres:5432/duckbricks
+      DUCKLAKE_PG_HOST: postgres
+      PREFECT_API_URL: http://prefect-server:4200/api
+      PREFECT_INTERNAL_URL: http://prefect-server:4200
+      MARIMO_INTERNAL_URL: http://marimo:2718
     depends_on:
-      - postgres
-      - minio
+      postgres:
+        condition: service_healthy
+      prefect-server:
+        condition: service_healthy
+      marimo:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    environment:
-      - POSTGRES_USER=duckbricks
-      - POSTGRES_PASSWORD=changeme
-      - POSTGRES_DB=duckbricks
-
-  minio:
-    image: minio/minio:latest
-    ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
-    volumes:
-      - minio-data:/data
-    environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=changeme
-    command: server /data --console-address ":9001"
 
   prefect-server:
-    image: prefecthq/prefect:2-latest
-    ports:
-      - "4200:4200"
-    volumes:
-      - prefect-data:/root/.prefect
-    environment:
-      - PREFECT_API_URL=http://prefect-server:4200/api
-    command: prefect server start --host 0.0.0.0
+    image: prefecthq/prefect:3-latest
+
+  duckbricks-worker:
+    build: .
+    command: prefect worker start --pool duckbricks-pool
+
+  marimo:
+    image: python:3.12-slim
 
 volumes:
   postgres-data:
-  minio-data:
   prefect-data:
   duckbricks-data:
 ```
@@ -403,45 +366,43 @@ volumes:
 
 | Service | Purpose | Scaling | Data Persistence |
 |---------|---------|---------|------------------|
-| **duckbricks-web** | NiceGUI + FastAPI server | Stateless (horizontal) | None (uses shared storage) |
-| **postgres** | Metastore + app database | Single instance (primary-replica for HA) | Volume: `postgres-data` |
-| **minio** | Object storage for Parquet files | Single instance (distributed mode for HA) | Volume: `minio-data` |
+| **duckbricks** | NiceGUI + FastAPI server with an in-process DuckDB connection | Single instance | Shared `duckbricks-data` volume |
+| **postgres** | DuckLake catalog + application database | Single instance | Volume: `postgres-data` |
 | **prefect-server** | Workflow orchestration | Single instance | Volume: `prefect-data` |
+| **duckbricks-worker** | Executes Prefect deployments | One or more workers | Shared `duckbricks-data` volume |
+| **marimo** | Notebook editor/server | Single instance | Shared `duckbricks-data` volume |
 
 ### 3.3 Network Architecture
 
 **Docker Compose Network:**
 - Default bridge network for internal service communication
-- Exposed ports: `8080` (web), `5432` (postgres), `9000/9001` (minio), `4200` (prefect)
+- Exposed ports: `8082` (web), `5432` (postgres), `4200` (Prefect)
+- Marimo is reachable only through the DuckBricks `/marimo` proxy
 
 **Port Mapping:**
-- `8080` → NiceGUI UI + FastAPI REST API
+- `8082` → NiceGUI UI + FastAPI routes
 - `5432` → PostgreSQL (for external admin tools like pgAdmin)
-- `9000` → MinIO API (S3-compatible)
-- `9001` → MinIO Console (web UI)
 - `4200` → Prefect UI
 
 **Internal DNS:**
 Services communicate via Docker Compose service names:
-- `duckbricks-web` → `postgres` (PostgreSQL connection)
-- `duckbricks-web` → `minio` (object storage)
-- `duckbricks-web` → `prefect-server` (workflow triggers)
+- `duckbricks` / `duckbricks-worker` → `postgres`
+- `duckbricks` / `duckbricks-worker` → `prefect-server`
+- `duckbricks` → `marimo`
 
 ### 3.4 Volume Strategy
 
 **Persistent Volumes:**
 1. **postgres-data:** PostgreSQL data directory (`/var/lib/postgresql/data`)
-2. **minio-data:** MinIO storage (`/data`)
-3. **prefect-data:** Prefect metadata (`/root/.prefect`)
-4. **duckbricks-data:** DuckLake catalog + Parquet files (fallback for local storage)
+2. **prefect-data:** Prefect local state (`/root/.prefect`)
+3. **duckbricks-data:** Workspace files and local DuckLake Parquet data
 
 **Backup Strategy:**
 - **PostgreSQL:** Use `pg_dump` for logical backups, WAL archiving for PITR
-- **MinIO:** Use MinIO's built-in replication or `mc mirror` for backups
-- **DuckLake Catalog:** Backup `.ducklake` file + Parquet directory
+- **DuckLake:** Back up its PostgreSQL catalog and the configured Parquet/object-storage path together
 
 **Development vs. Production:**
-- **Dev:** Mount local directories for hot-reload (`./app:/app`)
+- **Dev:** `docker-compose.override.yml` mounts `./app:/app/app` for hot-reload
 - **Prod:** Copy code into image at build time (no mounts)
 
 ### 3.5 Environment Configuration
@@ -449,32 +410,43 @@ Services communicate via Docker Compose service names:
 **Configuration File:** `.env` (not committed to Git)
 
 ```bash
-# Database
-DATABASE_URL=postgresql://duckbricks:changeme@postgres:5432/duckbricks
+# Application database
+DATABASE_URL=postgresql://duckbricks:duckbricks@postgres:5432/duckbricks
 
-# DuckLake
-DUCKLAKE_CATALOG_PATH=/data/metastore.ducklake
-DUCKLAKE_DATA_PATH=/data/parquet/
+# PostgreSQL-backed DuckLake catalog
+DUCKLAKE_PG_HOST=postgres
+DUCKLAKE_PG_PORT=5432
+DUCKLAKE_PG_DATABASE=duckbricks
+DUCKLAKE_PG_USER=duckbricks
+DUCKLAKE_PG_PASSWORD=duckbricks
+DUCKBRICKS_DATA_PATH=/data/parquet/
 
 # Storage Backend (local | minio | s3 | azure | gcs)
-STORAGE_BACKEND=minio
-MINIO_ENDPOINT=minio:9000
-MINIO_ACCESS_KEY=minioadmin
-MINIO_SECRET_KEY=changeme
-MINIO_BUCKET=duckbricks
+DUCKBRICKS_STORAGE_BACKEND=local
 
-# Prefect
+# Internal services
 PREFECT_API_URL=http://prefect-server:4200/api
+PREFECT_INTERNAL_URL=http://prefect-server:4200
+PREFECT_EXTERNAL_URL=http://localhost:4200
+MARIMO_INTERNAL_URL=http://marimo:2718
 
 # Application
-SECRET_KEY=<generate-random-key>
-ALLOWED_ORIGINS=http://localhost:8080
+DUCKBRICKS_WORKSPACE_PATH=/data/workspace
+DUCKBRICKS_SECRET_KEY=<generate-fernet-key>
 ```
 
 **Configuration Loading:**
-- Use `pydantic-settings` for typed configuration
-- Environment variables take precedence over `.env` file
-- Fail fast on startup if required config is missing
+- `app/config.py` loads `.env`, then reads environment variables into module-level constants
+- Docker Compose provides container-aware defaults while allowing `.env` overrides
+- `RuntimeConfigurationValidator` fails startup for invalid URLs, ports, database settings, storage backends, or missing backend credentials
+- Runtime initialization is retried three times before startup fails
+
+### 3.6 Health and Readiness
+
+- `GET /health/live` confirms that the web process can serve requests and has no dependency checks.
+- `GET /health/ready` checks PostgreSQL, DuckLake, Prefect, and Marimo concurrently.
+- Readiness returns HTTP `503` with sanitized component states when a dependency is unavailable.
+- Compose uses readiness for the DuckBricks container and service-specific health checks for PostgreSQL, Prefect, and Marimo.
 
 ---
 
@@ -1339,64 +1311,43 @@ logging.info(f"Connecting to {redact_url(DATABASE_URL)}")
 **Example Configuration:**
 
 ```python
-# app/config.py
-from pydantic_settings import BaseSettings
-from typing import Optional
+from app.config import RuntimeConfiguration, validate_runtime_configuration
 
-class Settings(BaseSettings):
-    # Database
-    database_url: str = "sqlite:///data/duckbricks.db"
-
-    # DuckLake
-    ducklake_catalog_path: str = "/data/metastore.ducklake"
-    ducklake_data_path: str = "/data/parquet/"
-
-    # Storage
-    storage_backend: str = "local"  # local | minio | s3 | azure | gcs
-    s3_bucket: Optional[str] = None
-    s3_endpoint_url: Optional[str] = None
-
-    # Scheduler
-    workflow_scheduler: str = "prefect"  # prefect | airflow | dagster
-    prefect_api_url: Optional[str] = None
-
-    # Application
-    secret_key: str = "changeme-in-production"
-    allowed_origins: list[str] = ["http://localhost:8080"]
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
-settings = Settings()
+configuration = RuntimeConfiguration.current()
+validate_runtime_configuration(configuration)
 ```
+
+The validator checks configuration shape and required backend credentials without placing secret
+values in its error messages. Connectivity is verified separately during application startup and
+through readiness checks.
 
 ### 8.2 Configuration File Strategy
 
 **`.env` File (Development):**
 ```bash
 DATABASE_URL=postgresql://user:pass@localhost:5432/duckbricks
-STORAGE_BACKEND=local
-WORKFLOW_SCHEDULER=prefect
-SECRET_KEY=dev-secret-key
+DUCKLAKE_PG_HOST=localhost
+DUCKBRICKS_STORAGE_BACKEND=local
+PREFECT_INTERNAL_URL=http://localhost:4200
+MARIMO_INTERNAL_URL=http://localhost:2718
 ```
 
 **Environment Variables (Production):**
 ```bash
 export DATABASE_URL="postgresql://..."
-export STORAGE_BACKEND="s3"
-export S3_BUCKET="duckbricks-prod"
-export SECRET_KEY="$(openssl rand -hex 32)"
+export DUCKBRICKS_STORAGE_BACKEND="s3"
+export DUCKBRICKS_DATA_PATH="s3://duckbricks-prod/data/"
+export DUCKBRICKS_SECRET_KEY="<fernet-key>"
 ```
 
 **Docker Compose:**
 ```yaml
 services:
-  duckbricks-web:
+  duckbricks:
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - STORAGE_BACKEND=${STORAGE_BACKEND}
-      - S3_BUCKET=${S3_BUCKET}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://duckbricks:duckbricks@postgres/duckbricks}
+      DUCKLAKE_PG_HOST: ${DUCKLAKE_PG_HOST:-postgres}
+      DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
 ```
 
 ### 8.3 Swapping Components via Configuration
@@ -1405,30 +1356,20 @@ services:
 
 ```bash
 # Before (local)
-STORAGE_BACKEND=local
-DUCKLAKE_DATA_PATH=/data/parquet/
+DUCKBRICKS_STORAGE_BACKEND=local
+DUCKBRICKS_DATA_PATH=/data/parquet/
 
 # After (S3)
-STORAGE_BACKEND=s3
-S3_BUCKET=duckbricks-prod
-S3_ENDPOINT_URL=https://s3.amazonaws.com  # Or MinIO URL
+DUCKBRICKS_STORAGE_BACKEND=s3
+DUCKBRICKS_DATA_PATH=s3://duckbricks-prod/data/
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
 ```
 
-**No code changes required.** The `get_storage_backend()` factory reads `STORAGE_BACKEND` and returns the appropriate adapter.
+**No code changes required.** `StorageBackendFactory` reads `DUCKBRICKS_STORAGE_BACKEND` and returns the appropriate adapter.
 
-**Example: Switch from Prefect to Airflow:**
-
-```bash
-# Before (Prefect)
-WORKFLOW_SCHEDULER=prefect
-PREFECT_API_URL=http://prefect-server:4200/api
-
-# After (Airflow)
-WORKFLOW_SCHEDULER=airflow
-AIRFLOW_API_URL=http://airflow-webserver:8080/api/v1
-```
+Prefect is currently the only implemented scheduler. A scheduler abstraction remains a future
+architectural option rather than a configuration-only switch.
 
 ---
 

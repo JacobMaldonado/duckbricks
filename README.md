@@ -34,7 +34,7 @@ DuckBricks is a lightweight, self-hosted data platform that provides Databricks-
 git clone https://github.com/JacobMaldonado/duckbricks.git
 cd duckbricks
 cp .env.example .env   # if present; otherwise configure env vars directly
-docker compose up -d
+docker compose up -d --wait
 ```
 
 The web UI is available at `http://localhost:8082`.
@@ -49,7 +49,7 @@ The web UI is available at `http://localhost:8082`.
 | `postgres` | Metastore + application database | `5432` |
 | `prefect-server` | Workflow orchestration (UI proxied at `/prefect-ui`) | `4200` |
 | `duckbricks-worker` | Prefect work pool worker | — |
-| `marimo` | Notebook server (proxied at `/marimo`) | `2718` |
+| `marimo` | Notebook server (proxied at `/marimo`) | — |
 
 ## Pages
 
@@ -77,10 +77,34 @@ Configuration is loaded from environment variables (or a `.env` file). See `app/
 | `DUCKBRICKS_STORAGE_BACKEND` | `local` | Storage backend (`local`, `s3`, `minio`, `r2`, `gcs`, `azure`) |
 | `DUCKBRICKS_WORKSPACE_PATH` | `./workspace` | Workspace root for files and notebooks |
 | `DATABASE_URL` | `postgresql://duckbricks:duckbricks@localhost:5432/duckbricks` | PostgreSQL connection string |
+| `DUCKLAKE_PG_HOST` | `localhost` | PostgreSQL host for the DuckLake catalog (`postgres` in Compose) |
+| `DUCKLAKE_PG_PORT` | `5432` | PostgreSQL port for the DuckLake catalog |
+| `DUCKLAKE_PG_DATABASE` | `duckbricks` | PostgreSQL database for the DuckLake catalog |
+| `DUCKLAKE_PG_USER` | `duckbricks` | PostgreSQL user for the DuckLake catalog |
+| `DUCKLAKE_PG_PASSWORD` | `duckbricks` | PostgreSQL password for the DuckLake catalog |
 | `MARIMO_URL` | `/marimo` | Public base path for Marimo |
 | `MARIMO_INTERNAL_URL` | `http://localhost:2718` | Internal Marimo server URL |
+| `PREFECT_API_URL` | — | Prefect API used by the SDK and worker |
 | `PREFECT_INTERNAL_URL` | `http://localhost:4200` | Internal Prefect server URL |
 | `PREFECT_EXTERNAL_URL` | `http://localhost:4200` | External Prefect server URL |
+
+Docker Compose supplies container-aware defaults such as `postgres`, `prefect-server`, and
+`marimo`. Override them in `.env` when deploying with a different network topology.
+
+## Health Checks
+
+| Route | Purpose |
+|-------|---------|
+| `/health/live` | Confirms that the DuckBricks web process can serve requests |
+| `/health/ready` | Checks PostgreSQL, DuckLake, Prefect, and Marimo; returns `503` when unavailable |
+
+```bash
+curl -f http://localhost:8082/health/live
+curl -f http://localhost:8082/health/ready
+```
+
+Invalid configuration stops startup immediately. Runtime dependency initialization is retried
+three times before the process exits and lets the container restart policy take over.
 
 ## Development
 

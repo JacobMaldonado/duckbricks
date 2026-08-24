@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
+from prefect.exceptions import ObjectNotFound
 
 from app.services.prefect.client import PrefectApiClient
 
@@ -42,6 +43,7 @@ class TestEnsureWorkPool:
     @pytest.mark.asyncio
     async def test_creates_work_pool_when_absent(self):
         mock_client = AsyncMock()
+        mock_client.read_work_pool.side_effect = ObjectNotFound(Exception("404"))
         with patch(
             "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
         ):
@@ -49,11 +51,25 @@ class TestEnsureWorkPool:
         mock_client.create_work_pool.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_swallows_exception_when_pool_already_exists(self):
+    async def test_does_not_create_work_pool_when_it_already_exists(self):
         mock_client = AsyncMock()
-        mock_client.create_work_pool.side_effect = Exception("already exists")
         with patch(
             "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
+            await PrefectApiClient().ensure_work_pool()
+        mock_client.read_work_pool.assert_awaited_once()
+        mock_client.create_work_pool.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_propagates_connectivity_errors(self):
+        mock_client = AsyncMock()
+        mock_client.read_work_pool.side_effect = RuntimeError("server unavailable")
+        with (
+            patch(
+                "app.services.prefect.client.get_client",
+                return_value=_make_client_context(mock_client),
+            ),
+            pytest.raises(RuntimeError, match="server unavailable"),
         ):
             await PrefectApiClient().ensure_work_pool()
 

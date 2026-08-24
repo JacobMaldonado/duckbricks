@@ -222,7 +222,7 @@ def _open_run_history(job: Job) -> None:
                     for run in page_runs:
                         _render_flow_run_row(run, dialog)
                 page_label.set_text(
-                    f"Page {page_index['value'] + 1} of {total_pages}" f"  ({len(runs)} runs total)"
+                    f"Page {page_index['value'] + 1} of {total_pages}  ({len(runs)} runs total)"
                 )
                 prev_btn.props("disabled" if page_index["value"] == 0 else "")
                 next_btn.props("disabled" if page_index["value"] >= total_pages - 1 else "")
@@ -286,7 +286,7 @@ def _open_prefect_iframe_dialog(title: str, proxy_path: str, external_url: str) 
                 )
                 ui.button(icon="close", on_click=dialog.close).props("flat dense")
         ui.html(
-            f'<iframe src="{external_url}" '
+            f'<iframe src="{proxy_path}" '
             f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>',
             sanitize=False,
         ).classes("w-full h-full mb-[-16px]")

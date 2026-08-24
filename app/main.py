@@ -1,18 +1,18 @@
 """DuckBricks — NiceGUI application entry point."""
 
 import logging
-from pathlib import Path
 
 from fastapi import Request, WebSocket
 from nicegui import app, ui
 
+from app.api.health import create_health_router
 from app.api.marimo_proxy import proxy_http_request, proxy_websocket
 from app.api.prefect_proxy import proxy_prefect_http
-from app.config import HOST, PORT, RELOAD, WORKSPACE_PATH
+from app.config import HOST, PORT, RELOAD
 from app.services.completion.schema_provider import CompletionSchemaProvider
-from app.services.database.session import init_database
+from app.services.health import health_service
 from app.services.metastore import manager
-from app.services.prefect import prefect_client
+from app.services.startup import ApplicationStartup
 from app.ui.pages.explorer import explorer_page
 from app.ui.pages.job_execution import job_execution_page
 from app.ui.pages.jobs import jobs_page
@@ -27,24 +27,16 @@ logging.basicConfig(
 )
 
 
-async def startup():
-    """Auto-initialize metastore and application database on startup."""
-    Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
-    try:
-        manager.initialize()
-    except Exception as e:
-        print(f"Warning: Could not auto-initialize metastore: {e}")
-    try:
-        init_database()
-    except Exception as e:
-        print(f"Warning: Could not initialize database: {e}")
-    try:
-        await prefect_client.ensure_work_pool()
-    except Exception as e:
-        print(f"Warning: Could not initialize Prefect work pool: {e}")
+_application_startup = ApplicationStartup()
+
+
+async def startup() -> None:
+    """Initialize required application dependencies or fail startup."""
+    await _application_startup.run()
 
 
 app.on_startup(startup)
+app.include_router(create_health_router(health_service))
 app.add_static_files("/static", "app/ui/static")
 
 

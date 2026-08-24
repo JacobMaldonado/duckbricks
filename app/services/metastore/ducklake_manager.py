@@ -73,6 +73,17 @@ class MetastoreManager:
     def is_initialized(self) -> bool:
         return self._initialized
 
+    def check_connectivity(self) -> bool:
+        """Return whether the initialized DuckDB connection can execute a probe query."""
+        if not self._initialized or self._conn is None:
+            return False
+        with self._lock:
+            try:
+                row = self._conn.execute("SELECT 1").fetchone()
+                return bool(row and row[0] == 1)
+            except Exception:
+                return False
+
     def execute_query(self, sql: str) -> dict:
         """Execute a SQL query and return results."""
         if not self._initialized:

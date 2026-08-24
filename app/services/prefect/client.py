@@ -20,6 +20,8 @@ from prefect.client.schemas.filters import (
 from prefect.client.schemas.objects import FlowRun
 from prefect.client.schemas.schedules import CronSchedule
 from prefect.client.schemas.sorting import FlowRunSort
+from prefect.exceptions import ObjectNotFound
+from prefect.states import StateType
 
 from app.config import PREFECT_EXTERNAL_URL
 
@@ -45,12 +47,11 @@ class PrefectApiClient:
         """Create the DuckBricks work pool if it does not already exist."""
         async with get_client() as client:
             try:
+                await client.read_work_pool(_WORK_POOL_NAME)
+                _log.debug("Prefect work pool '%s' already exists.", _WORK_POOL_NAME)
+            except ObjectNotFound:
                 await client.create_work_pool(WorkPoolCreate(name=_WORK_POOL_NAME, type="process"))
                 _log.info("Created Prefect work pool '%s'.", _WORK_POOL_NAME)
-            except Exception:
-                _log.debug(
-                    "Work pool '%s' already exists or could not be created.", _WORK_POOL_NAME
-                )
 
     async def register_flow(self) -> UUID:
         """Register the DuckBricks job flow with Prefect and return its flow ID."""
@@ -127,14 +128,14 @@ class PrefectApiClient:
                     state=FlowRunFilterState(
                         type=FlowRunFilterStateType(
                             any_=[
-                                "PENDING",
-                                "RUNNING",
-                                "COMPLETED",
-                                "FAILED",
-                                "CANCELLED",
-                                "CRASHED",
-                                "PAUSED",
-                                "CANCELLING",
+                                StateType.PENDING,
+                                StateType.RUNNING,
+                                StateType.COMPLETED,
+                                StateType.FAILED,
+                                StateType.CANCELLED,
+                                StateType.CRASHED,
+                                StateType.PAUSED,
+                                StateType.CANCELLING,
                             ]
                         )
                     )

@@ -1,5 +1,7 @@
 """Tests for DuckBricks services."""
 
+from unittest.mock import Mock
+
 from app.services.ducklake import DuckLakeManager
 
 
@@ -18,3 +20,17 @@ def test_ducklake_manager_status(ducklake_manager):
     assert "data_path" in status
     assert "ducklake_name" in status
     assert status["initialized"] is False
+
+
+def test_ducklake_manager_connectivity_requires_initialization(ducklake_manager):
+    assert ducklake_manager.check_connectivity() is False
+
+
+def test_ducklake_manager_connectivity_executes_probe(ducklake_manager):
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = (1,)
+    ducklake_manager._conn = connection
+    ducklake_manager._initialized = True
+
+    assert ducklake_manager.check_connectivity() is True
+    connection.execute.assert_called_once_with("SELECT 1")

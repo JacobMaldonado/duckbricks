@@ -2,7 +2,15 @@
 
 ## Context
 
-Always gather context from `docs/requirements/v0.1.0/REQUIREMENTS.md` before implementing any feature or making changes.
+Before implementing any feature or making any change, read and follow:
+
+- `docs/ARCHITECTURE.md` — system design, component responsibilities, and data flow.
+- `docs/DESIGN_SYSTEM.md` — UI styling conventions, colors, icons, and component patterns.
+
+If a request conflicts with (or drifts from) either document, **stop and flag the drift to the user**. Do not proceed silently. Ask the user whether they want to:
+
+1. Update the affected document(s) to reflect the new direction, or
+2. Take a different approach that stays consistent with the existing documents.
 
 ## Engineering Standards
 

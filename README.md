@@ -1,14 +1,26 @@
-# 🧱 DuckBricks
+# 🦆 DuckBricks
 
-**Open-source data platform built on DuckLake**
+**A self-hosted data platform built on DuckLake and DuckDB**
 
-DuckBricks is a lightweight, self-hosted data platform that uses [DuckLake](https://ducklake.select/) as its storage layer and [DuckDB](https://duckdb.org/) as its query engine. Deploy it with Docker Compose and start querying in minutes.
+DuckBricks is a lightweight, self-hosted data platform that provides Databricks-like functionality using [DuckLake](https://ducklake.select/) as its table format and [DuckDB](https://duckdb.org/) as its query engine. It ships a web UI for browsing the catalog, authoring SQL, orchestrating jobs, and managing a notebook-driven workspace.
 
 ## Features
 
-- **Metastore Management** — Initialize and manage your DuckLake metastore
-- **Query Engine** — Run SQL queries against DuckLake via a REST API
-- **Table Catalog** — Browse tables, schemas, and row counts
+- **Metastore Explorer** — Browse the catalog (catalog → schema → table) and inspect table schemas.
+- **Query Editor** — Write and run SQL with CodeMirror syntax highlighting and schema-aware autocompletion.
+- **Jobs** — Schedule and run queries and workflows via [Prefect](https://docs.prefect.io/).
+- **Workspace** — File tree, [Marimo](https://marimo.io/) notebooks, and Git integration for versioned data work.
+- **Settings** — Configure storage backend and connection settings.
+
+## Tech Stack
+
+- **UI:** [NiceGUI](https://nicegui.io/) 2.x (Quasar 2 + Vue)
+- **Query Engine:** [DuckDB](https://duckdb.org/)
+- **Table Format:** [DuckLake](https://ducklake.select/)
+- **Metastore + App DB:** [PostgreSQL](https://www.postgresql.org/)
+- **Orchestration:** [Prefect](https://docs.prefect.io/) 3
+- **Notebooks:** [Marimo](https://marimo.io/)
+- **Deployment:** Docker Compose
 
 ## Quick Start
 
@@ -21,115 +33,67 @@ DuckBricks is a lightweight, self-hosted data platform that uses [DuckLake](http
 ```bash
 git clone https://github.com/JacobMaldonado/duckbricks.git
 cd duckbricks
+cp .env.example .env   # if present; otherwise configure env vars directly
 docker compose up -d
 ```
 
-The API will be available at `http://localhost:8000`.
+The web UI is available at `http://localhost:8082`.
 
-### Initialize the Metastore
+### Services
 
-```bash
-curl -X POST http://localhost:8000/api/metastore/init
-```
+`docker compose up -d` starts:
 
-### Create a Table
+| Service | Purpose | Port (host) |
+|---------|---------|-------------|
+| `duckbricks` | NiceGUI web app | `8082` |
+| `postgres` | Metastore + application database | `5432` |
+| `prefect-server` | Workflow orchestration (UI proxied at `/prefect-ui`) | `4200` |
+| `duckbricks-worker` | Prefect work pool worker | — |
+| `marimo` | Notebook server (proxied at `/marimo`) | `2718` |
 
-```bash
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"sql": "CREATE TABLE users (id INTEGER, name VARCHAR, email VARCHAR)"}'
-```
+## Pages
 
-### Insert Data
-
-```bash
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"sql": "INSERT INTO users VALUES (1, '\''Alice'\'', '\''alice@example.com'\''), (2, '\''Bob'\'', '\''bob@example.com'\'')"}'
-```
-
-### Query Data
-
-```bash
-curl -X POST http://localhost:8000/api/query \
-  -H "Content-Type: application/json" \
-  -d '{"sql": "SELECT * FROM users"}'
-```
-
-### List Tables
-
-```bash
-curl http://localhost:8000/api/tables
-```
-
-### Get Table Details
-
-```bash
-curl http://localhost:8000/api/tables/users
-```
-
-## API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/health` | Health check |
-| `POST` | `/api/metastore/init` | Initialize the DuckLake metastore |
-| `GET` | `/api/metastore/status` | Check metastore status |
-| `POST` | `/api/query` | Execute a SQL query |
-| `GET` | `/api/tables` | List all tables |
-| `GET` | `/api/tables/{name}` | Get table details |
-
-### Query Request
-
-```json
-{
-  "sql": "SELECT * FROM my_table"
-}
-```
-
-### Query Response
-
-```json
-{
-  "success": true,
-  "columns": ["id", "name", "email"],
-  "rows": [[1, "Alice", "alice@example.com"], [2, "Bob", "bob@example.com"]],
-  "row_count": 2
-}
-```
+| Route | Description |
+|-------|-------------|
+| `/explorer` | Metastore Explorer (catalog browser) |
+| `/query` | Query Editor with SQL autocompletion |
+| `/jobs` | Scheduled jobs and executions |
+| `/workspace` | File tree, Marimo notebooks, Git integration |
+| `/settings` | Storage and connection settings |
+| `/prefect-ui` | Proxied Prefect UI |
+| `/marimo` | Proxied Marimo notebook server |
 
 ## Configuration
 
+Configuration is loaded from environment variables (or a `.env` file). See `app/config.py` for the full list.
+
 | Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `DUCKBRICKS_CATALOG_PATH` | `/data/metastore.ducklake` | Path to the DuckLake catalog file |
+|----------------------|---------|-------------|
+| `DUCKBRICKS_HOST` | `0.0.0.0` | Web server host |
+| `DUCKBRICKS_PORT` | `8000` | Web server port (inside the container) |
+| `DUCKBRICKS_ENV` | `production` | Set to `development` to enable reload |
 | `DUCKBRICKS_DATA_PATH` | `/data/parquet/` | Path for Parquet file storage |
 | `DUCKBRICKS_DUCKLAKE_NAME` | `duckbricks` | Name of the DuckLake database |
-| `DUCKBRICKS_HOST` | `0.0.0.0` | API server host |
-| `DUCKBRICKS_PORT` | `8000` | API server port |
+| `DUCKBRICKS_STORAGE_BACKEND` | `local` | Storage backend (`local`, `s3`, `minio`, `r2`, `gcs`, `azure`) |
+| `DUCKBRICKS_WORKSPACE_PATH` | `./workspace` | Workspace root for files and notebooks |
+| `DATABASE_URL` | `postgresql://duckbricks:duckbricks@localhost:5432/duckbricks` | PostgreSQL connection string |
+| `MARIMO_URL` | `/marimo` | Public base path for Marimo |
+| `MARIMO_INTERNAL_URL` | `http://localhost:2718` | Internal Marimo server URL |
+| `PREFECT_INTERNAL_URL` | `http://localhost:4200` | Internal Prefect server URL |
+| `PREFECT_EXTERNAL_URL` | `http://localhost:4200` | External Prefect server URL |
+
+## Development
+
+```bash
+poetry install
+poetry run pre-commit install
+poetry run pytest            # run tests
+poetry run python -m app.main  # run the app locally
+```
 
 ## Architecture
 
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────┐
-│   REST API   │────▶│    DuckDB    │────▶│     DuckLake     │
-│  (FastAPI)   │     │  (Engine)    │     │  (Catalog + Data)│
-└──────────────┘     └──────────────┘     └──────────────────┘
-                                                   │
-                                          ┌────────┴────────┐
-                                          │                 │
-                                    ┌─────┴─────┐   ┌──────┴──────┐
-                                    │  Catalog   │   │   Parquet   │
-                                    │ (.ducklake)│   │   Files     │
-                                    └───────────┘   └─────────────┘
-```
-
-## Tech Stack
-
-- **API Framework:** [FastAPI](https://fastapi.tiangolo.com/) (Python)
-- **Query Engine:** [DuckDB](https://duckdb.org/)
-- **Storage Layer:** [DuckLake](https://ducklake.select/)
-- **Deployment:** Docker Compose
+For system design, component responsibilities, and data flow, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For UI styling conventions, see [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).
 
 ## License
 

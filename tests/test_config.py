@@ -1,10 +1,19 @@
 """Tests for runtime configuration validation."""
 
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
 from app.config import ConfigurationError, RuntimeConfiguration, validate_runtime_configuration
+
+
+def _replace_configuration(
+    configuration: RuntimeConfiguration,
+    updates: dict[str, object],
+) -> RuntimeConfiguration:
+    untyped_replace = cast(Any, replace)
+    return cast(RuntimeConfiguration, untyped_replace(configuration, **updates))
 
 
 @pytest.fixture
@@ -46,7 +55,7 @@ def test_invalid_configuration_reports_actionable_field(
     value: object,
     expected_message: str,
 ) -> None:
-    configuration = replace(valid_configuration, **{field: value})
+    configuration = _replace_configuration(valid_configuration, {field: value})
 
     with pytest.raises(ConfigurationError, match=expected_message):
         validate_runtime_configuration(configuration)
@@ -76,12 +85,12 @@ def test_remote_storage_requires_backend_credentials(
     updates: dict[str, str],
     missing_variable: str,
 ) -> None:
-    configuration = replace(
-        valid_configuration,
-        storage_backend=backend,
-        data_path="s3://duckbricks/data/",
-        **updates,
-    )
+    configuration_updates: dict[str, object] = {
+        "storage_backend": backend,
+        "data_path": "s3://duckbricks/data/",
+    }
+    configuration_updates.update(updates)
+    configuration = _replace_configuration(valid_configuration, configuration_updates)
 
     with pytest.raises(ConfigurationError, match=missing_variable):
         validate_runtime_configuration(configuration)

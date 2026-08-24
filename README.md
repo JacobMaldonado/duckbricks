@@ -117,7 +117,10 @@ poetry run python -m app.main  # run the app locally
 
 ## Architecture
 
-For system design, component responsibilities, and data flow, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For UI styling conventions, see [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).
+For system design, component responsibilities, and data flow, see
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). For UI styling conventions, see
+[`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md). Deferred recommendations from the repository
+review are tracked in [`docs/TECHNICAL_REVIEW_BACKLOG.md`](docs/TECHNICAL_REVIEW_BACKLOG.md).
 
 ## License
 

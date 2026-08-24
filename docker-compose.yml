@@ -1,3 +1,18 @@
+x-duckbricks-runtime-environment: &duckbricks-runtime-environment
+  DATABASE_URL: ${DATABASE_URL:-postgresql://duckbricks:duckbricks@postgres:5432/duckbricks}
+  DUCKLAKE_PG_HOST: ${DUCKLAKE_PG_HOST:-postgres}
+  DUCKLAKE_PG_PORT: ${DUCKLAKE_PG_PORT:-5432}
+  DUCKLAKE_PG_DATABASE: ${DUCKLAKE_PG_DATABASE:-duckbricks}
+  DUCKLAKE_PG_USER: ${DUCKLAKE_PG_USER:-duckbricks}
+  DUCKLAKE_PG_PASSWORD: ${DUCKLAKE_PG_PASSWORD:-duckbricks}
+  DUCKBRICKS_WORKSPACE_PATH: ${DUCKBRICKS_WORKSPACE_PATH:-/data/workspace}
+  DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
+  MARIMO_URL: ${MARIMO_URL:-/marimo}
+  MARIMO_INTERNAL_URL: ${MARIMO_INTERNAL_URL:-http://marimo:2718}
+  PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect-server:4200/api}
+  PREFECT_INTERNAL_URL: ${PREFECT_INTERNAL_URL:-http://prefect-server:4200}
+  PREFECT_EXTERNAL_URL: ${PREFECT_EXTERNAL_URL:-http://localhost:4200}
+
 services:
   duckbricks:
     build: .
@@ -8,16 +23,20 @@ services:
     env_file:
       - .env
     environment:
-      MARIMO_URL: /marimo
-      MARIMO_INTERNAL_URL: http://marimo:2718
-      PREFECT_API_URL: http://prefect-server:4200/api
-      DUCKBRICKS_WORKSPACE_PATH: /data/workspace
-      DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
+      <<: *duckbricks-runtime-environment
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
       prefect-server:
+        condition: service_healthy
+      marimo:
         condition: service_healthy
 
   postgres:
@@ -64,11 +83,7 @@ services:
     build: .
     command: prefect worker start --pool duckbricks-pool
     environment:
-      PREFECT_API_URL: http://prefect-server:4200/api
-      MARIMO_URL: /marimo
-      MARIMO_INTERNAL_URL: http://marimo:2718
-      DUCKBRICKS_WORKSPACE_PATH: /data/workspace
-      DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
+      <<: *duckbricks-runtime-environment
     env_file:
       - .env
     volumes:
@@ -93,6 +108,12 @@ services:
       - .env
     environment:
       DUCKBRICKS_STORAGE_BACKEND: ${DUCKBRICKS_STORAGE_BACKEND:-local}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:2718/marimo/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 120s
     restart: unless-stopped
 
 volumes:

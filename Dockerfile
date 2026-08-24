@@ -23,6 +23,6 @@ COPY app/ ./app/
 # Create data directory
 RUN mkdir -p /data/parquet
 
-EXPOSE 8082
+EXPOSE 8000
 
 CMD ["python", "-m", "app.main"]

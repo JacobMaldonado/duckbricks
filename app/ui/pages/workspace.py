@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 import urllib.parse
+from collections.abc import Callable
 from pathlib import Path
 
 from nicegui import ui
@@ -58,12 +60,21 @@ _DRAG_DROP_JS = """
 <style>
 .cm-editor .cm-tooltip-autocomplete { z-index: 9999 !important; }
 .cm-editor { overflow: visible !important; }
-.ws-editor .nicegui-codemirror { height: 100% !important; }
-.ws-editor .cm-editor { height: 100% !important; }
+.ws-editor .nicegui-codemirror {
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+.ws-editor .cm-editor {
+    flex: 1 1 0% !important;
+    min-height: 0 !important;
+    height: auto !important;
+}
 .ws-editor .cm-scroller { overflow: auto !important; }
 .ws-row-drop-target { outline: 2px dashed #1976d2 !important; background: #e3f2fd !important; }
 
-/* File tree panel: normal vs marimo-mode */
+/* File tree panel: normal vs collapsed */
 .ws-file-tree-icon-strip {
     display: none;
     flex-direction: column;
@@ -76,16 +87,16 @@ _DRAG_DROP_JS = """
     flex-direction: column;
     width: 100%;
 }
-body.ws-marimo-mode .ws-file-tree-panel {
+body.ws-panel-collapsed .ws-file-tree-panel {
     width: 48px !important;
     min-width: 48px !important;
     overflow: visible !important;
     padding: 4px !important;
     position: relative !important;
 }
-body.ws-marimo-mode .ws-file-tree-body { display: none !important; }
-body.ws-marimo-mode .ws-file-tree-icon-strip { display: flex !important; }
-body.ws-marimo-mode .ws-file-tree-panel:hover .ws-file-tree-body {
+body.ws-panel-collapsed .ws-file-tree-body { display: none !important; }
+body.ws-panel-collapsed .ws-file-tree-icon-strip { display: flex !important; }
+body.ws-panel-collapsed .ws-file-tree-panel:hover .ws-file-tree-body {
     display: flex !important;
     position: absolute;
     left: 0;
@@ -132,6 +143,25 @@ def workspace_page() -> None:
         _render_editor_panel()
 
 
+def _toggle_file_tree_panel(button: ui.button) -> None:
+    storage = ui.context.client.storage
+    collapsed = not storage.get("_ws_panel_collapsed", False)
+    storage["_ws_panel_collapsed"] = collapsed
+    button.set_icon("chevron_right" if collapsed else "chevron_left")
+    ui.run_javascript(
+        f"document.body.classList.toggle('ws-panel-collapsed', {'true' if collapsed else 'false'});"
+    )
+
+
+def _render_menu_item(icon: str, text: str, on_click) -> None:
+    """Render a menu item with a leading Material icon and label."""
+    with ui.menu_item(on_click=on_click, auto_close=True):
+        with ui.item_section().props("avatar"):
+            ui.icon(icon).classes("text-grey-7")
+        with ui.item_section():
+            ui.label(text).classes("text-body2")
+
+
 def _render_file_tree_panel() -> None:
     with (
         ui.column()
@@ -150,6 +180,10 @@ def _render_file_tree_panel() -> None:
             with ui.row().classes("w-full items-center justify-between q-mb-xs"):
                 ui.label("Workspace").classes("text-weight-bold text-body2")
                 with ui.row().classes("items-center").style("gap: 0"):
+                    toggle_button = ui.button(
+                        icon="chevron_left",
+                        on_click=lambda: _toggle_file_tree_panel(toggle_button),
+                    ).props("flat dense size=xs color=grey-7").tooltip("Collapse/expand panel")
                     ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
                         "flat dense size=xs"
                     ).tooltip("New file")
@@ -158,21 +192,15 @@ def _render_file_tree_panel() -> None:
                     ).tooltip("New folder")
                     with ui.button(icon="more_vert").props("flat dense size=xs color=grey-7"):
                         with ui.menu():
-                            ui.menu_item(
-                                "New File",
-                                on_click=_open_new_file_dialog,
-                                auto_close=True,
-                            )
-                            ui.menu_item(
-                                "New Folder",
-                                on_click=_open_new_folder_dialog,
-                                auto_close=True,
+                            _render_menu_item("note_add", "New File", _open_new_file_dialog)
+                            _render_menu_item(
+                                "create_new_folder", "New Folder", _open_new_folder_dialog
                             )
                             ui.separator()
-                            ui.menu_item(
+                            _render_menu_item(
+                                "source",
                                 "New Git Folder",
-                                on_click=lambda: _open_new_git_folder_dialog(tree_container),
-                                auto_close=True,
+                                lambda: _open_new_git_folder_dialog(tree_container),
                             )
 
             tree_container = ui.column().classes("w-full gap-0")
@@ -225,7 +253,7 @@ def _render_tree_node(node: WorkspaceNode, tree_container: ui.column, depth: int
                             "cursor-pointer text-xs flex-shrink-0"
                         ).on(
                             "click.stop",
-                            lambda n=node: _open_git_dialog(n.path),
+                            lambda n=node, c=tree_container: _open_git_dialog(n.path, c),
                         ).tooltip("Click to manage git repository")
                     ui.space()
                     _render_context_menu(node, tree_container)
@@ -450,11 +478,11 @@ def _deactivate_marimo_mode() -> None:
         label.set_text(relative_path)
 
 
-def _open_git_dialog(workspace_path: str) -> None:
+def _open_git_dialog(workspace_path: str, tree_container: ui.column) -> None:
     """Open the custom Git management dialog for the given workspace-relative path."""
     from app.ui.components.git_dialog import GitFolderDialog  # noqa: PLC0415
 
-    GitFolderDialog(workspace_path).open()
+    GitFolderDialog(workspace_path, on_change=lambda: _refresh_tree(tree_container)).open()
 
 
 def _open_file_in_editor(relative_path: str) -> None:
@@ -831,9 +859,132 @@ def _create_folder(relative_path: str, dialog) -> None:
         ui.notification(f"Error: {exc}", type="negative")
 
 
+class _GitSourcePicker:
+    """Connection + repository/URL + branch selection controls for git dialogs."""
+
+    def __init__(self, connection_service) -> None:
+        self._service = connection_service
+        self._repos: list = []
+        self.on_url_change: Callable[[str], None] | None = None
+
+    def render(self) -> None:
+        connections = self._service.list_all()
+        connection_options = {str(c.id): f"{c.name} ({c.provider_type})" for c in connections}
+
+        self.connection_select = ui.select(
+            options=connection_options, label="Git Connection"
+        ).classes("w-full")
+
+        self.mode_switch = ui.switch("Choose from repositories", value=True).props("dense")
+
+        with ui.column().classes("w-full gap-1") as self.browse_section:
+            with ui.row().classes("w-full items-center gap-2"):
+                self.repo_select = (
+                    ui.select(options={}, label="Repository (browse & search)")
+                    .classes("flex-1")
+                    .props("use-input input-debounce=0 clearable")
+                )
+                self.repo_spinner = ui.spinner(size="sm").set_visibility(False)
+            self.branch_select = (
+                ui.select(options={}, label="Branch")
+                .classes("w-full")
+                .props("use-input input-debounce=0 clearable")
+            )
+
+        with ui.column().classes("w-full gap-1") as self.url_section:
+            self.url_input = (
+                ui.input("Repository URL", placeholder="https://github.com/user/my-repo")
+                .classes("w-full")
+                .props("clearable")
+            )
+            self.branch_input = ui.input("Branch", value="main").classes("w-full")
+
+        self.url_section.set_visibility(False)
+
+        self.mode_switch.on_value_change(lambda _: self._sync_visibility())
+        self.connection_select.on(
+            "update:model-value", lambda _: asyncio.create_task(self._load_repos())
+        )
+        self.repo_select.on(
+            "update:model-value", lambda e: asyncio.create_task(self._on_repo_change(e.args))
+        )
+        self.url_input.on("update:model-value", lambda e: self._notify_url_change(e.args or ""))
+
+    def resolve(self) -> tuple[int | None, str, str]:
+        """Return (connection_id, url, branch) from the current form state."""
+        connection_id = int(self.connection_select.value) if self.connection_select.value else None
+        if self.mode_switch.value:
+            url = (self.repo_select.value or "").strip()
+            branch = (self.branch_select.value or "main").strip() or "main"
+        else:
+            url = (self.url_input.value or "").strip()
+            branch = (self.branch_input.value or "main").strip() or "main"
+        return connection_id, url, branch
+
+    def _sync_visibility(self) -> None:
+        if self.mode_switch.value:
+            self.browse_section.set_visibility(True)
+            self.url_section.set_visibility(False)
+            self.url_input.set_value("")
+        else:
+            self.browse_section.set_visibility(False)
+            self.url_section.set_visibility(True)
+            self.repo_select.set_value(None)
+
+    async def _load_repos(self) -> None:
+        if not self.connection_select.value:
+            return
+        self.repo_spinner.set_visibility(True)
+        self.repo_select.disable()
+        try:
+            repos = await asyncio.to_thread(
+                self._service.list_repositories, int(self.connection_select.value)
+            )
+            self._repos = repos
+            self.repo_select.options = {r.clone_url: r.full_name for r in repos}
+            self.repo_select.update()
+        except Exception as exc:
+            ui.notification(f"Could not load repositories: {exc}", type="negative")
+        finally:
+            self.repo_spinner.set_visibility(False)
+            self.repo_select.enable()
+
+    async def _load_branches(self, full_name: str, default_branch: str) -> None:
+        if not full_name or not self.connection_select.value:
+            return
+        self.branch_select.disable()
+        try:
+            branches = await asyncio.to_thread(
+                self._service.list_branches,
+                int(self.connection_select.value),
+                full_name,
+            )
+            self.branch_select.options = branches
+            self.branch_select.update()
+            if default_branch in branches:
+                self.branch_select.set_value(default_branch)
+            elif branches:
+                self.branch_select.set_value(branches[0])
+        except Exception as exc:
+            ui.notification(f"Could not load branches: {exc}", type="negative")
+        finally:
+            self.branch_select.enable()
+
+    async def _on_repo_change(self, repo_url: str) -> None:
+        if not repo_url:
+            return
+        selected = next((r for r in self._repos if r.clone_url == repo_url), None)
+        if selected:
+            await self._load_branches(selected.full_name, selected.default_branch or "main")
+        self._notify_url_change(repo_url)
+
+    def _notify_url_change(self, url: str) -> None:
+        if self.on_url_change:
+            self.on_url_change(url)
+
+
 def _open_convert_to_git_dialog(node: WorkspaceNode, tree_container: ui.column) -> None:
     from app.services.git.connection_service import GitConnectionService
-    from app.services.git.providers.base import Repository
 
     connection_service = GitConnectionService()
 
@@ -861,106 +1012,43 @@ def _open_convert_to_git_dialog(node: WorkspaceNode, tree_container: ui.column) 
             dialog.open()
             return
 
-        connection_options = {str(c.id): f"{c.name} ({c.provider_type})" for c in connections}
-        connection_select = ui.select(
-            options=connection_options,
-            label="Git Connection",
-        ).classes("w-full")
-
-        repos_state: dict[str, list[Repository]] = {"items": []}
-        repo_select = (
-            ui.select(options={}, label="Repository (browse & search)")
-            .classes("w-full")
-            .props("use-input input-debounce=0 clearable")
-        )
-
-        branch_input = ui.input("Branch", value="main").classes("w-full")
-
-        with ui.row().classes("w-full items-center gap-2 q-my-xs"):
-            ui.separator().classes("flex-1")
-            ui.label("or paste URL directly").classes("text-caption text-grey-6")
-            ui.separator().classes("flex-1")
-
-        url_input = (
-            ui.input(
-                "Repository URL",
-                placeholder="https://github.com/user/empty-repo",
-            )
-            .classes("w-full")
-            .props("clearable")
-        )
-
-        def _autofill_from_dropdown(repo_url: str) -> None:
-            if not repo_url:
-                return
-            selected = next((r for r in repos_state["items"] if r.clone_url == repo_url), None)
-            if selected:
-                branch_input.set_value(selected.default_branch or "main")
-
-        repo_select.on("update:model-value", lambda e: _autofill_from_dropdown(e.args))
-
-        def load_repos() -> None:
-            if not connection_select.value:
-                return
-            try:
-                repos = connection_service.list_repositories(int(connection_select.value))
-                repos_state["items"] = repos
-                repo_select.options = {r.clone_url: r.full_name for r in repos}
-                repo_select.update()
-            except Exception as exc:
-                ui.notification(f"Could not load repositories: {exc}", type="negative")
-
-        connection_select.on("update:model-value", lambda _: load_repos())
+        picker = _GitSourcePicker(connection_service)
+        picker.render()
 
         with ui.row().classes("justify-end gap-2 q-mt-md"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button(
-                "Convert & Push",
-                icon="upload",
-                on_click=lambda: _convert_folder_to_git(
+            convert_btn = ui.button("Convert & Push", icon="upload").props("color=green-8")
+
+        async def on_convert() -> None:
+            connection_id, resolved_url, branch = picker.resolve()
+            if not connection_id or not resolved_url:
+                ui.notification("A connection and a repository are required.", type="warning")
+                return
+            convert_btn.props(add="loading")
+            try:
+                await asyncio.to_thread(
+                    _git_folder_service.convert_to_git,
                     folder_path=node.path,
-                    connection_id_str=connection_select.value,
-                    repo_url=repo_select.value,
-                    direct_url=url_input.value,
-                    branch=branch_input.value,
-                    dialog=dialog,
-                    tree_container=tree_container,
-                ),
-            ).props("color=green-8")
+                    connection_id=connection_id,
+                    repo_url=resolved_url,
+                    branch=branch,
+                )
+                dialog.close()
+                ui.notification(
+                    f"'{node.path}' converted and pushed successfully.", type="positive"
+                )
+                _refresh_tree(tree_container)
+            except Exception as exc:
+                ui.notification(f"Conversion failed: {exc}", type="negative")
+            finally:
+                convert_btn.props(remove="loading")
+
+        convert_btn.on_click(on_convert)
     dialog.open()
-
-
-def _convert_folder_to_git(
-    folder_path: str,
-    connection_id_str: str,
-    repo_url: str,
-    direct_url: str,
-    branch: str,
-    dialog,
-    tree_container: ui.column,
-) -> None:
-    branch = branch.strip() or "main"
-    resolved_url = direct_url.strip() or repo_url
-    if not connection_id_str or not resolved_url:
-        ui.notification("A connection and a repository are required.", type="warning")
-        return
-    try:
-        _git_folder_service.convert_to_git(
-            folder_path=folder_path,
-            connection_id=int(connection_id_str),
-            repo_url=resolved_url,
-            branch=branch,
-        )
-        dialog.close()
-        ui.notification(f"'{folder_path}' converted and pushed successfully.", type="positive")
-        _refresh_tree(tree_container)
-    except Exception as exc:
-        ui.notification(f"Conversion failed: {exc}", type="negative")
 
 
 def _open_new_git_folder_dialog(tree_container: ui.column) -> None:
     from app.services.git.connection_service import GitConnectionService
-    from app.services.git.providers.base import Repository
 
     connection_service = GitConnectionService()
 
@@ -979,107 +1067,38 @@ def _open_new_git_folder_dialog(tree_container: ui.column) -> None:
             dialog.open()
             return
 
-        connection_options = {str(c.id): f"{c.name} ({c.provider_type})" for c in connections}
-        connection_select = ui.select(
-            options=connection_options,
-            label="Git Connection",
-        ).classes("w-full")
-
-        repos_state: dict[str, list[Repository]] = {"items": []}
-        repo_select = (
-            ui.select(options={}, label="Repository (browse & search)")
-            .classes("w-full")
-            .props("use-input input-debounce=0 clearable")
-        )
-
-        branch_input = ui.input("Branch", value="main").classes("w-full")
-
-        with ui.row().classes("w-full items-center gap-2 q-my-xs"):
-            ui.separator().classes("flex-1")
-            ui.label("or paste URL directly").classes("text-caption text-grey-6")
-            ui.separator().classes("flex-1")
-
-        url_input = (
-            ui.input(
-                "Repository URL",
-                placeholder="https://github.com/user/my-repo",
-            )
-            .classes("w-full")
-            .props("clearable")
-        )
+        picker = _GitSourcePicker(connection_service)
+        picker.render()
 
         folder_input = ui.input("Folder name in workspace", placeholder="my-repo").classes("w-full")
-
-        def _autofill_from_dropdown(repo_url: str) -> None:
-            if not repo_url:
-                return
-            selected = next((r for r in repos_state["items"] if r.clone_url == repo_url), None)
-            if selected:
-                branch_input.set_value(selected.default_branch or "main")
-            folder_input.set_value(_folder_name_from_url(repo_url))
-
-        def _autofill_from_url(raw_url: str) -> None:
-            if not raw_url.strip():
-                return
-            folder_input.set_value(_folder_name_from_url(raw_url))
-
-        repo_select.on("update:model-value", lambda e: _autofill_from_dropdown(e.args))
-        url_input.on("update:model-value", lambda e: _autofill_from_url(e.args or ""))
-
-        def load_repos() -> None:
-            if not connection_select.value:
-                return
-            try:
-                repos = connection_service.list_repositories(int(connection_select.value))
-                repos_state["items"] = repos
-                repo_select.options = {r.clone_url: r.full_name for r in repos}
-                repo_select.update()
-            except Exception as exc:
-                ui.notification(f"Could not load repositories: {exc}", type="negative")
-
-        connection_select.on("update:model-value", lambda _: load_repos())
+        picker.on_url_change = lambda url: folder_input.set_value(_folder_name_from_url(url))
 
         with ui.row().classes("justify-end gap-2 q-mt-md"):
             ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button(
-                "Clone & Create",
-                on_click=lambda: _create_git_folder(
-                    folder_name=folder_input.value,
-                    connection_id_str=connection_select.value,
-                    repo_url=repo_select.value,
-                    direct_url=url_input.value,
-                    branch=branch_input.value,
-                    dialog=dialog,
-                    tree_container=tree_container,
-                ),
-            ).props("color=primary")
+            clone_btn = ui.button("Clone & Create").props("color=primary")
+
+        async def on_clone() -> None:
+            folder_name = folder_input.value.strip()
+            connection_id, resolved_url, branch = picker.resolve()
+            if not folder_name or not connection_id or not resolved_url:
+                ui.notification("All fields are required.", type="warning")
+                return
+            clone_btn.props(add="loading")
+            try:
+                await asyncio.to_thread(
+                    _git_folder_service.create,
+                    folder_name=folder_name,
+                    git_connection_id=connection_id,
+                    repo_url=resolved_url,
+                    branch=branch,
+                )
+                dialog.close()
+                ui.notification(f"Git folder '{folder_name}' cloned successfully.", type="positive")
+                _refresh_tree(tree_container)
+            except Exception as exc:
+                ui.notification(f"Clone failed: {exc}", type="negative")
+            finally:
+                clone_btn.props(remove="loading")
+
+        clone_btn.on_click(on_clone)
     dialog.open()
-
-
-def _create_git_folder(
-    folder_name: str,
-    connection_id_str: str,
-    repo_url: str,
-    direct_url: str,
-    branch: str,
-    dialog,
-    tree_container: ui.column,
-) -> None:
-    folder_name = folder_name.strip()
-    branch = branch.strip() or "main"
-    resolved_url = direct_url.strip() or repo_url
-    if not folder_name or not connection_id_str or not resolved_url:
-        ui.notification("All fields are required.", type="warning")
-        return
-    try:
-        _git_folder_service.create(
-            folder_name=folder_name,
-            git_connection_id=int(connection_id_str),
-            repo_url=resolved_url,
-            branch=branch,
-        )
-        dialog.close()
-        ui.notification(f"Git folder '{folder_name}' cloned successfully.", type="positive")
-        _refresh_tree(tree_container)
-    except Exception as exc:
-        ui.notification(f"Clone failed: {exc}", type="negative")

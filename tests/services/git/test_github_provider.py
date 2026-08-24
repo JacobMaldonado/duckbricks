@@ -57,6 +57,19 @@ def test_list_repositories_parses_response():
     assert repos[0].default_branch == "main"
 
 
+def test_list_branches_returns_names():
+    provider = _make_provider()
+    mock_response = MagicMock()
+    mock_response.json.return_value = [
+        {"name": "main"},
+        {"name": "dev"},
+        {"name": "feature/x"},
+    ]
+    with patch.object(provider, "_authenticated_get", return_value=mock_response):
+        branches = provider.list_branches("user/my-repo")
+    assert branches == ["main", "dev", "feature/x"]
+
+
 def test_inject_token_replaces_https_prefix():
     provider = _make_provider(token="abc123")
     url = "https://github.com/user/repo.git"

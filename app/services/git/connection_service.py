@@ -86,3 +86,9 @@ class GitConnectionService:
         connection = self.get(connection_id)
         provider = self.build_provider(connection)
         return provider.list_repositories()
+
+    def list_branches(self, connection_id: int, full_name: str) -> list[str]:
+        """Return remote branch names for a repository accessible through the connection."""
+        connection = self.get(connection_id)
+        provider = self.build_provider(connection)
+        return provider.list_branches(full_name)

@@ -102,9 +102,6 @@ def query_workspace():
     layout_frame()
 
     ui.query("body").style("overflow: hidden")
-    ui.query(".nicegui-content").classes("p-0").style(
-        "padding: 0 !important; height: calc(100vh - 64px) !important;"
-    )
     ui.add_head_html("""
     <style>
     .cm-editor .cm-tooltip-autocomplete {

@@ -40,6 +40,12 @@ class GitHubPatProvider(GitProvider):
         response.raise_for_status()
         return [self._parse_repository(item) for item in response.json()]
 
+    def list_branches(self, full_name: str) -> list[str]:
+        """Return branch names for a remote repository identified by owner/name."""
+        response = self._authenticated_get(f"/repos/{full_name}/branches?per_page=100")
+        response.raise_for_status()
+        return [item["name"] for item in response.json()]
+
     def clone(self, repo_url: str, destination: str, branch: str) -> None:
         """Clone the repository using the PAT embedded in the URL for authentication."""
         authenticated_url = self.build_authenticated_url(repo_url)

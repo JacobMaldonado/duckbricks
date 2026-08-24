@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from nicegui import ui
 
@@ -61,8 +62,9 @@ _GIT_DIFF_LINE_STYLER_JS = """
 class GitFolderDialog:
     """Full-screen dialog for managing a git folder — branch, pull, commit, diff, discard."""
 
-    def __init__(self, workspace_path: str) -> None:
+    def __init__(self, workspace_path: str, on_change: Callable[[], None] | None = None) -> None:
         self._workspace_path = workspace_path
+        self._on_change = on_change
         self._service = GitOperationsService()
         self._status: GitStatus | None = None
         self._selected_files: set[str] = set()
@@ -257,6 +259,7 @@ class GitFolderDialog:
             self._service.checkout_branch(self._workspace_path, selected)
             ui.notification(f"Switched to branch '{selected}'", type="positive")
             self._reload()
+            self._notify_change()
         except Exception as exc:
             ui.notification(f"Branch switch failed: {exc}", type="negative")
 
@@ -283,6 +286,7 @@ class GitFolderDialog:
             ui.notification(f"Created and switched to '{name}'", type="positive")
             dialog.close()
             self._reload()
+            self._notify_change()
         except Exception as exc:
             ui.notification(f"Failed to create branch: {exc}", type="negative")
 
@@ -340,3 +344,7 @@ class GitFolderDialog:
     def _close(self) -> None:
         if self._dialog:
             self._dialog.close()
+
+    def _notify_change(self) -> None:
+        if self._on_change:
+            self._on_change()

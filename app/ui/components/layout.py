@@ -48,3 +48,5 @@ def layout_frame(title: str = "DuckBricks") -> None:
                     ui.icon("settings").classes("text-grey-7")
                 with ui.item_section():
                     ui.label("Settings").classes("text-grey-9 text-body2")
+
+    ui.query(".nicegui-content").classes("p-0").style("padding: 0 !important;")

@@ -165,9 +165,6 @@ def explorer_page() -> None:
     layout_frame()
 
     ui.query("body").style("overflow: hidden")
-    ui.query(".nicegui-content").classes("p-0").style(
-        "padding: 0 !important; height: calc(100vh - 64px) !important;"
-    )
 
     if not manager.is_initialized:
         with ui.column().classes("q-pa-lg w-full items-center"):

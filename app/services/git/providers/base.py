@@ -29,6 +29,10 @@ class GitProvider(ABC):
         """Return repositories accessible with the current credentials."""
 
     @abstractmethod
+    def list_branches(self, full_name: str) -> list[str]:
+        """Return remote branch names for a repository identified by owner/name."""
+
+    @abstractmethod
     def clone(self, repo_url: str, destination: str, branch: str) -> None:
         """Clone a repository into the given destination directory on the given branch."""
 

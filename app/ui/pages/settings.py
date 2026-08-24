@@ -115,8 +115,7 @@ def _test_connection(connection, badge: ui.badge) -> None:
             badge.set_text("expired / invalid")
             badge.update()
             ui.notification(
-                f"Connection '{connection.name}' is expired or invalid. "
-                "Please review the token.",
+                f"Connection '{connection.name}' is expired or invalid. Please review the token.",
                 type="warning",
             )
     except Exception as exc:

@@ -7,6 +7,7 @@ import time
 import urllib.parse
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from nicegui import ui
 
@@ -29,7 +30,7 @@ _ICON_BY_EXTENSION = {
     ".txt": ("text_snippet", "grey-6"),
 }
 
-_CODEMIRROR_LANGUAGE_BY_EXTENSION: dict[str, str | None] = {
+_CODEMIRROR_LANGUAGE_BY_EXTENSION: dict[str, Any] = {
     ".sql": "SQL",
     ".py": "Python",
     ".ipynb": None,
@@ -177,13 +178,18 @@ def _render_file_tree_panel() -> None:
             .style("display: flex; flex-direction: column")
         ):
             tree_container: ui.column  # declared before use in lambdas below
+            toggle_button: ui.button
             with ui.row().classes("w-full items-center justify-between q-mb-xs"):
                 ui.label("Workspace").classes("text-weight-bold text-body2")
                 with ui.row().classes("items-center").style("gap: 0"):
-                    toggle_button = ui.button(
-                        icon="chevron_left",
-                        on_click=lambda: _toggle_file_tree_panel(toggle_button),
-                    ).props("flat dense size=xs color=grey-7").tooltip("Collapse/expand panel")
+                    toggle_button = (
+                        ui.button(
+                            icon="chevron_left",
+                            on_click=lambda: _toggle_file_tree_panel(toggle_button),
+                        )
+                        .props("flat dense size=xs color=grey-7")
+                        .tooltip("Collapse/expand panel")
+                    )
                     ui.button(icon="note_add", on_click=_open_new_file_dialog).props(
                         "flat dense size=xs"
                     ).tooltip("New file")
@@ -422,7 +428,7 @@ def _activate_marimo_mode(relative_path: str) -> None:
     storage = ui.context.client.storage
     storage["_ws_current_path"] = relative_path
 
-    label: ui.label = storage.get("_ws_label")
+    label = cast(ui.label | None, storage.get("_ws_label"))
     if label:
         label.set_text(relative_path)
 
@@ -466,8 +472,8 @@ def _deactivate_marimo_mode() -> None:
     except FileNotFoundError:
         return
 
-    editor: ui.codemirror = storage.get("_ws_editor")
-    label: ui.label = storage.get("_ws_label")
+    editor = cast(ui.codemirror | None, storage.get("_ws_editor"))
+    label = cast(ui.label | None, storage.get("_ws_label"))
 
     if editor:
         editor.set_language(language)
@@ -509,8 +515,8 @@ def _open_file_in_editor(relative_path: str) -> None:
     storage["_ws_current_path"] = relative_path
     storage["_ws_lang"] = language
 
-    editor: ui.codemirror = storage.get("_ws_editor")
-    label: ui.label = storage.get("_ws_label")
+    editor = cast(ui.codemirror | None, storage.get("_ws_editor"))
+    label = cast(ui.label | None, storage.get("_ws_label"))
 
     if editor:
         editor.set_language(language)
@@ -573,8 +579,8 @@ def _open_as_source(relative_path: str, dialog: ui.dialog) -> None:
     storage["_ws_current_path"] = relative_path
     storage["_ws_lang"] = language
 
-    editor: ui.codemirror = storage.get("_ws_editor")
-    label: ui.label = storage.get("_ws_label")
+    editor = cast(ui.codemirror | None, storage.get("_ws_editor"))
+    label = cast(ui.label | None, storage.get("_ws_label"))
     if editor:
         editor.set_language(language)
         editor.set_value(content)
@@ -637,8 +643,8 @@ def _open_notebook_as_source(relative_path: str, dialog: ui.dialog) -> None:
     storage["_ws_current_path"] = relative_path
     storage["_ws_lang"] = None
 
-    editor: ui.codemirror = storage.get("_ws_editor")
-    label: ui.label = storage.get("_ws_label")
+    editor = cast(ui.codemirror | None, storage.get("_ws_editor"))
+    label = cast(ui.label | None, storage.get("_ws_label"))
     if editor:
         editor.set_language(None)
         editor.set_value(content)
@@ -675,7 +681,7 @@ def _run_marimo_convert(relative_path: str, output_py_path: str, dialog: ui.dial
 def _save_current_file() -> None:
     storage = ui.context.client.storage
     relative_path: str = storage.get("_ws_current_path", "")
-    editor: ui.codemirror = storage.get("_ws_editor")
+    editor = cast(ui.codemirror | None, storage.get("_ws_editor"))
     if not relative_path:
         ui.notification("No file is currently open.", type="warning")
         return
@@ -884,7 +890,8 @@ class _GitSourcePicker:
                     .classes("flex-1")
                     .props("use-input input-debounce=0 clearable")
                 )
-                self.repo_spinner = ui.spinner(size="sm").set_visibility(False)
+                self.repo_spinner = ui.spinner(size="sm")
+                self.repo_spinner.set_visibility(False)
             self.branch_select = (
                 ui.select(options={}, label="Branch")
                 .classes("w-full")

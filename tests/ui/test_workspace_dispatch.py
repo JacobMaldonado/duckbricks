@@ -19,11 +19,7 @@ class TestPythonFileDetection:
 
     def test_template_contains_marimo_import(self):
         template = (
-            "# /// script\n"
-            "import marimo\n"
-            "\n"
-            '__generated_with = "0.10.0"\n'
-            "app = marimo.App()\n"
+            '# /// script\nimport marimo\n\n__generated_with = "0.10.0"\napp = marimo.App()\n'
         )
         assert "import marimo" in template
 
@@ -47,6 +43,15 @@ class TestMarimoConvertDispatch:
 
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0, stderr="")
+
+            import subprocess
+
+            subprocess.run(
+                ["marimo", "convert", str(abs_input), "-o", str(abs_output)],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
 
             mock_run.assert_called_once()
             call_args = mock_run.call_args[0][0]

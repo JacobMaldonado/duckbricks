@@ -216,5 +216,5 @@ class GitFolderService:
             raise ValueError(f"Could not reach remote for '{folder_path}': {exc}") from exc
         if remote_refs.strip():
             raise ValueError(
-                "Remote repository is not empty. " "Please use a fresh repository with no commits."
+                "Remote repository is not empty. Please use a fresh repository with no commits."
             )

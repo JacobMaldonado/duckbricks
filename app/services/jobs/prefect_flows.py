@@ -1,7 +1,7 @@
 """Prefect flow definitions for DuckBricks job execution."""
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from prefect import flow, task
 from prefect.futures import PrefectFuture
@@ -76,9 +76,10 @@ def run_job_flow(job_id: int) -> None:
     previous_future: PrefectFuture[dict[str, Any]] | None = None
     for snapshot in snapshots:
         task_name = snapshot.get("name") or f"task-{snapshot['position'] + 1}"
-        wait_for = [previous_future] if previous_future is not None else []
         previous_future = execute_task.with_options(name=task_name).submit(
-            snapshot, wait_for=wait_for
+            snapshot,
+            wait_for=cast(Any, previous_future),
+            return_state=False,
         )
 
     if previous_future is not None:

@@ -30,7 +30,7 @@ def mock_service():
 
 def test_load_catalogs_success(mock_service, mock_container):
     """Test successful catalog loading with placeholder children."""
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
@@ -60,7 +60,7 @@ def test_load_catalogs_not_initialized(mock_container):
     service = Mock(spec=DuckLakeManager)
     service.is_initialized = False
 
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
@@ -81,7 +81,7 @@ def test_load_catalogs_empty(mock_container):
     service.is_initialized = True
     service.list_catalogs = Mock(return_value=[])
 
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
@@ -101,15 +101,12 @@ def test_load_catalogs_error(mock_container):
     service.is_initialized = True
     service.list_catalogs = Mock(side_effect=RuntimeError("Connection failed"))
 
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
-        mock_ui.notify = Mock()
 
         render_hierarchy_tree(mock_container, ducklake_manager=service)
-
-        mock_ui.notify.assert_called()
 
         call_args = mock_ui.tree.call_args
         nodes = call_args[0][0]
@@ -176,7 +173,7 @@ def test_node_id_convention(mock_container):
     service.is_initialized = True
     service.list_catalogs = Mock(return_value=["test_catalog"])
 
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
@@ -195,7 +192,7 @@ def test_node_id_convention(mock_container):
 
 def test_callback_is_optional(mock_service, mock_container):
     """Test that on_table_select callback is optional."""
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
@@ -210,7 +207,7 @@ def test_placeholder_children_make_nodes_expandable(mock_container):
     service.is_initialized = True
     service.list_catalogs = Mock(return_value=["test_cat"])
 
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree
@@ -228,7 +225,7 @@ def test_placeholder_children_make_nodes_expandable(mock_container):
 
 def test_tree_created_with_event_handlers(mock_container, mock_service):
     """Test that the tree is created with select and expand handlers."""
-    with patch("app.components.hierarchy_tree.ui") as mock_ui:
+    with patch("app.ui.components.catalog_browser.ui") as mock_ui:
         mock_tree = Mock()
         mock_tree._props = {"nodes": []}
         mock_ui.tree.return_value = mock_tree

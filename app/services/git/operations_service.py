@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlparse, urlunparse
 
 import git as gitpython
@@ -33,15 +34,19 @@ class GitOperationsService:
         files: list[ChangedFile] = []
 
         for item in repo.index.diff(None):
-            files.append(ChangedFile(path=item.a_path, status="modified", is_staged=False))
+            path = self._diff_path(item)
+            if path:
+                files.append(ChangedFile(path=path, status="modified", is_staged=False))
 
         for item in repo.index.diff("HEAD"):
-            files.append(
-                ChangedFile(path=item.a_path, status=self._staged_status(item), is_staged=True)
-            )
+            path = self._diff_path(item)
+            if path:
+                files.append(
+                    ChangedFile(path=path, status=self._staged_status(item), is_staged=True)
+                )
 
-        for item in repo.untracked_files:
-            files.append(ChangedFile(path=item, status="untracked", is_staged=False))
+        for untracked_path in repo.untracked_files:
+            files.append(ChangedFile(path=untracked_path, status="untracked", is_staged=False))
 
         has_upstream = self._has_upstream(repo)
         return GitStatus(branch=branch, changed_files=files, has_upstream=has_upstream)
@@ -154,6 +159,11 @@ class GitOperationsService:
         if diff_item.renamed_file:
             return "renamed"
         return "modified"
+
+    @staticmethod
+    def _diff_path(diff_item: gitpython.Diff) -> str | None:
+        """Return the available path from a GitPython diff entry."""
+        return cast(str | None, diff_item.a_path or diff_item.b_path)
 
     def _push_with_auth(self, repo: Repo, folder_path: str) -> None:
         auth_url = self._build_authenticated_url(folder_path, repo)

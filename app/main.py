@@ -77,9 +77,9 @@ def explorer():
 
 
 @ui.page("/query")
-def query():
+def query(table: str | None = None):
     """SQL Query Workspace."""
-    query_workspace()
+    query_workspace(table)
 
 
 @ui.page("/jobs")

@@ -6,7 +6,8 @@ DuckBricks is a lightweight, self-hosted data platform that provides Databricks-
 
 ## Features
 
-- **Metastore Explorer** — Browse the catalog (catalog → schema → table) and inspect table schemas.
+- **Metastore Workbench** — Browse catalogs, schema assets, comments, columns, previews, and
+  DuckLake history in a three-pane workspace.
 - **Query Editor** — Write and run SQL with CodeMirror syntax highlighting and schema-aware autocompletion.
 - **Jobs** — Schedule and run queries and workflows via [Prefect](https://docs.prefect.io/).
 - **Workspace** — File tree, [Marimo](https://marimo.io/) notebooks, and Git integration for versioned data work.
@@ -55,7 +56,7 @@ The web UI is available at `http://localhost:8082`.
 
 | Route | Description |
 |-------|-------------|
-| `/explorer` | Metastore Explorer (catalog browser) |
+| `/explorer` | Metastore Workbench |
 | `/query` | Query Editor with SQL autocompletion |
 | `/jobs` | Scheduled jobs and executions |
 | `/workspace` | File tree, Marimo notebooks, Git integration |

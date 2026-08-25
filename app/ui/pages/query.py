@@ -5,6 +5,7 @@ import time
 from nicegui import ui
 
 from app.services.metastore import manager
+from app.services.metastore.asset_service import AssetPath
 from app.services.query import QueryEngine, QueryTabService
 from app.ui.components.catalog_browser import render_hierarchy_tree
 from app.ui.components.layout import layout_frame
@@ -97,7 +98,7 @@ def _render_results(results_container, result: dict):
     ResultsGrid().render(results_container, result)
 
 
-def query_workspace():
+def query_workspace(initial_table: str | None = None):
     """Render the Query Workspace page."""
     layout_frame()
 
@@ -188,9 +189,18 @@ def query_workspace():
                             ).tooltip("New tab")
 
                         initial_tab = all_tabs[0]
+                        editor_value = initial_tab.sql_content or "-- Write your SQL query here\n"
+                        if initial_table:
+                            try:
+                                table_path = AssetPath.parse(initial_table)
+                                editor_value = (
+                                    f"SELECT * FROM {table_path.sql_identifier} LIMIT 100;"
+                                )
+                            except ValueError:
+                                pass
                         editor = (
                             ui.codemirror(
-                                value=initial_tab.sql_content or "-- Write your SQL query here\n",
+                                value=editor_value,
                                 language="SQL",
                                 theme="githubLight",
                             )

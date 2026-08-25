@@ -120,7 +120,9 @@ Spacing is applied via Quasar spacing utility classes (`q-pa-*`, `q-ma-*`, `q-mx
 ### Layout
 
 - **App shell:** `ui.header` (64px) + `ui.left_drawer` (200px, collapsible).
-- **Two-panel views:** `ui.splitter` with adjustable split (Explorer and Query Editor).
+- **Two-panel views:** `ui.splitter` with adjustable split (Query Editor).
+- **Metastore Workbench:** three panes for the catalog tree, schema asset list, and asset
+  inspector. On narrow screens the panes stack vertically.
 - **Full-height content:** `height: calc(100vh - 64px)` with `overflow: hidden` on `body` and `.nicegui-content` set to `p-0`.
 
 ---
@@ -162,7 +164,7 @@ Common modifiers: `flat dense round`, `color=white` (on the header).
 ### Tables
 
 - **Results grid:** `app/ui/components/results_grid.py` renders query results; right-aligned numeric cells use muted color `#9e9e9e`.
-- **Schema display:** table-formatted `DESCRIBE` output in the Explorer.
+- **Schema display:** table-formatted information-schema metadata in the Metastore Workbench.
 
 ### Alerts & Toasts
 
@@ -209,7 +211,7 @@ The canonical icon mapping lives in `app/constants/ui_style.py` (`TREE_ICONS`).
 ### Empty States
 
 - Centered icon + muted heading (`text-grey-7`) + optional description.
-- Example: "Select a table to view its schema" placeholder in the Explorer.
+- Example: "Select an asset" placeholder in the Metastore Workbench.
 
 ### Error States
 

@@ -120,10 +120,13 @@ NiceGUI is a Python-based UI framework that enables rapid development of web int
 - **Components:** Reusable UI components in `app/ui/components/`
 - **Pages:** Full-page views in `app/ui/pages/`
 - **State Management:** NiceGUI's reactive state binding for UI updates
-- **Layout Patterns:** Two-panel layouts with `ui.splitter`, lazy-loaded tree views with `ui.tree`
+- **Layout Patterns:** Splitter-based editor views, a three-pane metastore workbench, and
+  lazy-loaded tree views with `ui.tree`
 
 **Current Implementation:**
-- Metastore Explorer: Hierarchical catalog browser (Catalog → Schema → Table)
+- Metastore Workbench: catalog hierarchy, schema assets, comments, columns, previews,
+  DuckLake history, and physical properties. Quality, usage, tags, and lineage intentionally
+  remain unconfigured until DuckBricks has dedicated application services for them.
 - Query Workspace: SQL editor with schema browser and results table
 
 **Future Enhancements:**

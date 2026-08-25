@@ -278,7 +278,7 @@ class MetastoreManager:
         with self._lock:
             try:
                 result = self._conn.execute(
-                    "SELECT comment FROM information_schema.tables "
+                    "SELECT table_comment FROM information_schema.tables "
                     "WHERE table_catalog = ? AND table_schema = ? AND table_name = ?",
                     [catalog, schema, table],
                 ).fetchone()
@@ -303,16 +303,29 @@ class MetastoreManager:
         """Return DuckLake snapshot history for a table."""
         with self._lock:
             try:
-                rows = self._conn.execute(
-                    f"SELECT * FROM ducklake_snapshots('{catalog}') "
-                    f"WHERE schema_name = '{schema}' AND table_name = '{table}' "
-                    f"ORDER BY snapshot_id DESC"
-                ).fetchall()
-                desc = self._conn.description
-                if not desc or not rows:
+                identity = self._get_asset_identity(catalog, schema, table)
+                if identity is None:
                     return []
-                col_names = [d[0] for d in desc]
-                return [dict(zip(col_names, row)) for row in rows]
+                asset_id, _ = identity
+                rows = self._conn.execute(
+                    "SELECT snapshot_id, snapshot_time, entry.key AS operation, "
+                    "author, commit_message "
+                    "FROM ducklake_snapshots(?) AS snapshots, "
+                    "UNNEST(map_entries(snapshots.changes)) AS item(entry) "
+                    "WHERE list_contains(entry.value, ?) OR list_contains(entry.value, ?) "
+                    "ORDER BY snapshot_id DESC",
+                    [catalog, str(asset_id), f"{schema}.{table}"],
+                ).fetchall()
+                return [
+                    {
+                        "snapshot_id": row[0],
+                        "snapshot_time": row[1],
+                        "operation": row[2],
+                        "author": row[3],
+                        "commit_message": row[4],
+                    }
+                    for row in rows
+                ]
             except Exception:
                 return []
 
@@ -328,17 +341,93 @@ class MetastoreManager:
                 "data_path": StorageBackendFactory.from_env().data_path(),
                 "file_count": None,
                 "total_size_bytes": None,
+                "estimated_rows": None,
+                "asset_uuid": None,
             }
             try:
+                identity = self._get_asset_identity(catalog, schema, table)
+                if identity is not None:
+                    props["asset_uuid"] = identity[1]
+
+                asset_type = self._get_asset_type(catalog, schema, table)
+                if asset_type != "BASE TABLE":
+                    return props
+
+                size_row = self._conn.execute(
+                    "SELECT estimated_size FROM duckdb_tables() "
+                    "WHERE database_name = ? AND schema_name = ? AND table_name = ?",
+                    [catalog, schema, table],
+                ).fetchone()
+                props["estimated_rows"] = size_row[0] if size_row else None
+
                 rows = self._conn.execute(
-                    f"SELECT path, file_size_bytes FROM ducklake_files('{catalog}') "
-                    f"WHERE schema_name = '{schema}' AND table_name = '{table}'"
+                    "SELECT data_file, data_file_size_bytes "
+                    "FROM ducklake_list_files(?, ?, schema => ?)",
+                    [catalog, table, schema],
                 ).fetchall()
-                props["file_count"] = len(rows)
-                props["total_size_bytes"] = sum(r[1] for r in rows if r[1] is not None)
+                data_files = [row for row in rows if row[0] is not None]
+                props["file_count"] = len(data_files)
+                props["total_size_bytes"] = sum(row[1] for row in data_files if row[1] is not None)
             except Exception:
                 pass
             return props
+
+    def get_asset_type(self, catalog: str, schema: str, table: str) -> str | None:
+        """Return BASE TABLE or VIEW for a catalog asset."""
+        if not self._initialized:
+            raise RuntimeError("Metastore not initialized.")
+        with self._lock:
+            return self._get_asset_type(catalog, schema, table)
+
+    def _get_asset_type(self, catalog: str, schema: str, table: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT table_type FROM information_schema.tables "
+            "WHERE table_catalog = ? AND table_schema = ? AND table_name = ?",
+            [catalog, schema, table],
+        ).fetchone()
+        return row[0] if row else None
+
+    def _get_asset_identity(
+        self,
+        catalog: str,
+        schema: str,
+        asset_name: str,
+    ) -> tuple[int, str | None] | None:
+        metadata_catalog = f"__ducklake_metadata_{catalog}"
+        metadata_schema_row = self._conn.execute(
+            "SELECT table_schema FROM information_schema.tables "
+            "WHERE table_catalog = ? AND table_name = 'ducklake_table' LIMIT 1",
+            [metadata_catalog],
+        ).fetchone()
+        if metadata_schema_row is None:
+            return None
+
+        quoted_catalog = self._quote_identifier(metadata_catalog)
+        quoted_schema = self._quote_identifier(metadata_schema_row[0])
+        table_relation = f"{quoted_catalog}.{quoted_schema}.ducklake_table"
+        view_relation = f"{quoted_catalog}.{quoted_schema}.ducklake_view"
+        schema_relation = f"{quoted_catalog}.{quoted_schema}.ducklake_schema"
+        row = self._conn.execute(
+            "SELECT asset_id, CAST(asset_uuid AS VARCHAR) FROM ("
+            f"SELECT item.table_id AS asset_id, item.table_uuid AS asset_uuid "
+            f"FROM {table_relation} AS item "
+            f"JOIN {schema_relation} AS namespace USING (schema_id) "
+            "WHERE item.end_snapshot IS NULL AND namespace.end_snapshot IS NULL "
+            "AND namespace.schema_name = ? AND item.table_name = ? "
+            "UNION ALL "
+            f"SELECT item.view_id AS asset_id, item.view_uuid AS asset_uuid "
+            f"FROM {view_relation} AS item "
+            f"JOIN {schema_relation} AS namespace USING (schema_id) "
+            "WHERE item.end_snapshot IS NULL AND namespace.end_snapshot IS NULL "
+            "AND namespace.schema_name = ? AND item.view_name = ?"
+            ") AS identities LIMIT 1",
+            [schema, asset_name, schema, asset_name],
+        ).fetchone()
+        return (row[0], row[1]) if row else None
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        return f'"{identifier.replace(chr(34), chr(34) * 2)}"'
 
     def list_tables_in_schema_with_types(self, catalog: str, schema: str) -> list[dict]:
         """Return list of dicts with name and table_type (BASE TABLE or VIEW)."""
@@ -353,18 +442,27 @@ class MetastoreManager:
             return [{"name": row[0], "table_type": row[1]} for row in result]
 
     def list_columns(self, catalog: str, schema: str, table: str) -> list[dict]:
-        """Return column names and data types for a specific table."""
+        """Return live column definitions and comments for a table or view."""
         if not self._initialized:
             return []
         with self._lock:
             try:
                 result = self._conn.execute(
-                    "SELECT column_name, data_type FROM information_schema.columns "
+                    "SELECT column_name, data_type, is_nullable, column_comment "
+                    "FROM information_schema.columns "
                     "WHERE table_catalog = ? AND table_schema = ? AND table_name = ? "
                     "ORDER BY ordinal_position",
                     [catalog, schema, table],
                 ).fetchall()
-                return [{"name": row[0], "type": row[1]} for row in result]
+                return [
+                    {
+                        "name": row[0],
+                        "type": row[1],
+                        "nullable": row[2] == "YES",
+                        "description": row[3],
+                    }
+                    for row in result
+                ]
             except Exception:
                 return []
 

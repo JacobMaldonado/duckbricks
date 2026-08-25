@@ -65,7 +65,7 @@ class NavigationDrawerState:
 
 
 NAVIGATION_DESTINATIONS = (
-    NavigationDestination(route="/explorer", label="Metastore Explorer", icon="storage"),
+    NavigationDestination(route="/explorer", label="Metastore", icon="storage"),
     NavigationDestination(route="/query", label="Query Editor", icon="code"),
     NavigationDestination(route="/jobs", label="Jobs", icon="schedule"),
     NavigationDestination(route="/workspace", label="Workspace", icon="folder_open"),

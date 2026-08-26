@@ -1,6 +1,12 @@
 """ORM model registry — import all models here so Alembic can detect them."""
 
-from app.services.database.models.app import Job, JobExecution, JobTask, TaskExecution
+from app.services.database.models.app import (
+    Job,
+    JobExecution,
+    JobTask,
+    JobTaskDependency,
+    TaskExecution,
+)
 from app.services.database.models.metastore import (
     CatalogModel,
     ColumnModel,
@@ -17,6 +23,7 @@ __all__ = [
     "PartitionModel",
     "Job",
     "JobTask",
+    "JobTaskDependency",
     "JobExecution",
     "TaskExecution",
 ]

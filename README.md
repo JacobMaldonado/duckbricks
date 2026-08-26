@@ -9,7 +9,8 @@ DuckBricks is a lightweight, self-hosted data platform that provides Databricks-
 - **Metastore Workbench** — Browse catalogs, schema assets, comments, columns, previews, and
   DuckLake history in a three-pane workspace.
 - **Query Editor** — Write and run SQL with CodeMirror syntax highlighting and schema-aware autocompletion.
-- **Jobs** — Schedule and run queries and workflows via [Prefect](https://docs.prefect.io/).
+- **Jobs** — Build workspace-backed SQL/Python DAGs, configure timezone-aware schedules,
+  and inspect live run, task, and log telemetry from [Prefect](https://docs.prefect.io/).
 - **Workspace** — File tree, [Marimo](https://marimo.io/) notebooks, and Git integration for versioned data work.
 - **Settings** — Configure storage backend and connection settings.
 
@@ -58,7 +59,10 @@ The web UI is available at `http://localhost:8082`.
 |-------|-------------|
 | `/explorer` | Metastore Workbench |
 | `/query` | Query Editor with SQL autocompletion |
-| `/jobs` | Scheduled jobs and executions |
+| `/jobs` | Job operations dashboard with live Prefect status |
+| `/jobs/new` | Create a scheduled or manual workspace-backed DAG |
+| `/jobs/{id}` | Job definition, flow graph, recent runs, tasks, and logs |
+| `/jobs/{id}/edit` | Edit a job, workspace files, dependencies, and schedule |
 | `/workspace` | File tree, Marimo notebooks, Git integration |
 | `/settings` | Storage and connection settings |
 | `/prefect-ui` | Proxied Prefect UI |

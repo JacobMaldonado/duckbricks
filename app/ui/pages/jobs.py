@@ -1,505 +1,441 @@
-"""Jobs page — create, manage, and monitor scheduled DuckBricks jobs."""
+"""Prefect-backed Jobs operations dashboard."""
 
-from pathlib import Path
+from __future__ import annotations
+
+import json
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from nicegui import ui
-from prefect.client.schemas.objects import FlowRun
 from sqlalchemy.exc import OperationalError
 
-from app.config import WORKSPACE_PATH
 from app.services.database.connection import DatabaseConnection
 from app.services.database.models.app import Job
-from app.services.jobs import JobService
+from app.services.jobs import JobService, JobTelemetryService
+from app.services.jobs.models import JobRunSummary, JobTelemetry
+from app.services.jobs.schedule_service import JobScheduleService
 from app.services.prefect import prefect_client
 from app.ui.components.layout import layout_frame
 
-_job_service = JobService()
+JOBS_DASHBOARD_CSS = """
+<style>
+.jobs-page { min-height: calc(100vh - 64px); background: #fafafa; }
+.jobs-kpis { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)); }
+.jobs-table-header,
+.jobs-row {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.7fr) minmax(190px, 1.25fr) 90px
+                           minmax(175px, 1.15fr) minmax(150px, 1fr) 150px;
+    align-items: center;
+    gap: 16px;
+}
+.jobs-table-header { color: #757575; font-size: 12px; font-weight: 500; }
+.jobs-row { background: white; border-top: 1px solid #eeeeee; min-height: 88px; }
+.jobs-row:hover { background: #fafafa; }
+.jobs-state-dot { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 9px; }
+@media (max-width: 1100px) {
+    .jobs-table-header { display: none; }
+    .jobs-row { grid-template-columns: minmax(220px, 1.5fr) minmax(180px, 1fr) 100px 150px; }
+    .jobs-last-run { grid-column: 1 / 3; }
+    .jobs-next-run { grid-column: 3; }
+    .jobs-actions { grid-column: 4; grid-row: 1 / 3; }
+}
+@media (max-width: 720px) {
+    .jobs-kpis { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+    .jobs-row { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+    .jobs-actions { align-self: flex-end; }
+}
+</style>
+"""
 
 _STATE_COLORS: dict[str, str] = {
-    "COMPLETED": "green",
-    "FAILED": "red",
-    "CRASHED": "red",
-    "RUNNING": "blue",
+    "COMPLETED": "positive",
+    "FAILED": "negative",
+    "CRASHED": "negative",
+    "RUNNING": "primary",
     "SCHEDULED": "orange",
     "PENDING": "orange",
-    "CANCELLED": "grey",
-    "CANCELLING": "grey",
-    "PAUSED": "grey",
-}
-
-_EXECUTOR_EXTENSIONS: dict[str, list[str]] = {
-    "sql": ["sql"],
-    "python": ["py", "ipynb"],
+    "CANCELLED": "grey-6",
+    "CANCELLING": "grey-6",
+    "PAUSED": "grey-6",
+    "UNKNOWN": "grey-5",
 }
 
 
-def _list_workspace_files(executor_type: str) -> list[str]:
-    """Return absolute paths of workspace files compatible with the given executor type."""
-    extensions = _EXECUTOR_EXTENSIONS.get(executor_type, [])
-    root = Path(WORKSPACE_PATH)
-    if not root.exists():
-        return []
-    return sorted(str(p) for ext in extensions for p in root.rglob(f"*.{ext}"))
+class JobsDashboard:
+    """Renders job definitions immediately and enriches them with Prefect telemetry."""
+
+    def __init__(self, job_service: JobService, telemetry_service: JobTelemetryService) -> None:
+        self._job_service = job_service
+        self._telemetry_service = telemetry_service
+        self._jobs: list[Job] = []
+        self._telemetry: dict[int, JobTelemetry] = {}
+        self._telemetry_error: str | None = None
+        self._summary_container: ui.column | None = None
+        self._rows_container: ui.column | None = None
+        self._search = ""
+        self._status_filter = "All"
+
+    def render(self) -> None:
+        layout_frame("Jobs")
+        ui.add_head_html(JOBS_DASHBOARD_CSS)
+        with ui.column().classes("w-full jobs-page gap-4 q-pa-lg"):
+            database_unavailable = (
+                not DatabaseConnection.is_available()
+                and not DatabaseConnection.check_connectivity()
+            )
+            if database_unavailable:
+                self._render_db_unavailable_banner()
+                return
+            try:
+                self._jobs = self._job_service.list_jobs()
+            except OperationalError:
+                self._render_db_unavailable_banner()
+                return
+
+            self._render_header()
+            self._summary_container = ui.column().classes("w-full")
+            self._render_summary()
+            self._render_filters()
+            with ui.card().classes("w-full q-pa-none gap-0"):
+                with ui.element("div").classes("jobs-table-header q-px-md q-py-sm"):
+                    for label in ("JOB", "SCHEDULE", "TASKS", "LAST RUN", "NEXT RUN", ""):
+                        ui.label(label)
+                self._rows_container = ui.column().classes("w-full gap-0")
+                self._render_rows()
+
+        if self._jobs:
+            ui.timer(0.05, self._refresh_telemetry, once=True)
+            ui.timer(30, self._refresh_telemetry)
+
+    def _render_header(self) -> None:
+        with ui.row().classes("w-full items-end gap-3"):
+            with ui.column().classes("gap-0"):
+                ui.label("Jobs").classes("text-h4 text-weight-medium")
+                ui.label("Build, schedule, and monitor Prefect-backed pipelines.").classes(
+                    "text-body2 text-grey-6"
+                )
+            ui.space()
+            ui.button(
+                "New job",
+                icon="add",
+                on_click=lambda: ui.navigate.to("/jobs/new"),
+            ).props("color=primary")
+
+    def _render_filters(self) -> None:
+        with ui.row().classes("w-full items-center gap-3"):
+            search = (
+                ui.input(placeholder="Search jobs...")
+                .props("outlined dense clearable prepend-icon=search")
+                .style("min-width: 280px")
+            )
+            status = (
+                ui.select(
+                    ["All", "Scheduled", "Manual", "Running", "Failed", "Paused"],
+                    value="All",
+                    label="Status",
+                )
+                .props("outlined dense")
+                .style("min-width: 160px")
+            )
+            ui.space()
+            if self._telemetry_error:
+                with ui.row().classes("items-center gap-1"):
+                    ui.icon("cloud_off", color="orange-8", size="18px")
+                    ui.label("Prefect telemetry unavailable").classes(
+                        "text-caption text-orange-9"
+                    ).tooltip(self._telemetry_error)
+            ui.button(icon="refresh", on_click=self._refresh_telemetry).props(
+                "flat round color=grey-7 aria-label=Refresh"
+            ).tooltip("Refresh telemetry")
+
+        def apply_search(event) -> None:
+            self._search = str(event.value or "").strip().casefold()
+            self._render_rows()
+
+        def apply_status(event) -> None:
+            self._status_filter = str(event.value or "All")
+            self._render_rows()
+
+        search.on_value_change(apply_search)
+        status.on_value_change(apply_status)
+
+    def _render_summary(self) -> None:
+        if not self._summary_container:
+            return
+        self._summary_container.clear()
+        with self._summary_container:
+            with ui.element("div").classes("w-full jobs-kpis gap-3"):
+                self._metric("Total jobs", str(len(self._jobs)), "account_tree", "primary")
+                scheduled = sum(1 for job in self._jobs if job.schedule_cron and job.is_enabled)
+                self._metric("Active schedules", str(scheduled), "event_repeat", "teal")
+                if self._telemetry_error or not self._telemetry:
+                    self._metric("Running now", "—", "play_circle", "grey-6")
+                    self._metric("Success · 7 days", "—", "verified", "grey-6")
+                    return
+                recent_runs = [
+                    run for telemetry in self._telemetry.values() for run in telemetry.recent_runs
+                ]
+                running = sum(1 for run in recent_runs if run.state in {"RUNNING", "PENDING"})
+                self._metric("Running now", str(running), "play_circle", "primary")
+                self._metric(
+                    "Success · 7 days",
+                    self._success_rate(recent_runs),
+                    "verified",
+                    "positive",
+                )
+
+    def _render_rows(self) -> None:
+        if not self._rows_container:
+            return
+        self._rows_container.clear()
+        jobs = [job for job in self._jobs if self._matches_filters(job)]
+        with self._rows_container:
+            if not jobs:
+                with ui.column().classes("w-full items-center q-pa-xl gap-2"):
+                    ui.icon("work_off", color="grey-5", size="42px")
+                    ui.label(
+                        "No jobs match these filters." if self._jobs else "No jobs yet"
+                    ).classes("text-subtitle1 text-grey-7")
+                    if not self._jobs:
+                        ui.button(
+                            "Create your first job",
+                            icon="add",
+                            on_click=lambda: ui.navigate.to("/jobs/new"),
+                        ).props("outline color=primary")
+                return
+            for job in jobs:
+                self._render_job_row(job)
+
+    def _render_job_row(self, job: Job) -> None:
+        telemetry = self._telemetry.get(job.id, JobTelemetry())
+        with ui.element("div").classes("jobs-row q-pa-md"):
+            with ui.column().classes("gap-1 min-w-0"):
+                ui.link(job.name, f"/jobs/{job.id}").classes(
+                    "text-body1 text-weight-medium text-grey-9 ellipsis"
+                )
+                ui.label(job.description or "No description").classes(
+                    "text-caption text-grey-6 ellipsis"
+                )
+            with ui.column().classes("gap-1 min-w-0"):
+                with ui.row().classes("items-center gap-2 no-wrap"):
+                    ui.icon("schedule", color="grey-6", size="18px")
+                    ui.label(
+                        JobScheduleService.describe(job.schedule_cron, job.schedule_timezone)
+                    ).classes("text-body2 ellipsis")
+                if job.schedule_cron:
+                    label = "Enabled" if job.is_enabled else "Paused"
+                    color = "positive" if job.is_enabled else "grey-6"
+                    ui.badge(label, color=color).props("outline")
+            with ui.column().classes("gap-0"):
+                ui.label(str(len(job.tasks))).classes("text-body1 text-weight-medium")
+                missing = sum(1 for task in job.tasks if not task.file_path)
+                ui.label(f"{missing} missing" if missing else "Workspace").classes(
+                    f"text-caption {'text-negative' if missing else 'text-grey-6'}"
+                )
+            with ui.column().classes("gap-1 jobs-last-run"):
+                self._render_run_state(telemetry.latest_run)
+            with ui.column().classes("gap-1 jobs-next-run"):
+                if telemetry.next_run and telemetry.next_run.expected_start_time:
+                    ui.label(self._format_datetime(telemetry.next_run.expected_start_time)).classes(
+                        "text-body2"
+                    )
+                    ui.label(self._relative_time(telemetry.next_run.expected_start_time)).classes(
+                        "text-caption text-grey-6"
+                    )
+                else:
+                    ui.label("—").classes("text-body2 text-grey-6")
+                    ui.label("Manual or paused").classes("text-caption text-grey-6")
+            with ui.row().classes("items-center justify-end gap-1 jobs-actions"):
+                ui.button(
+                    icon="play_arrow", on_click=lambda current=job: self._run_now(current)
+                ).props("flat round color=primary aria-label=Run").tooltip("Run now")
+                ui.button(
+                    icon="edit",
+                    on_click=lambda current=job: ui.navigate.to(f"/jobs/{current.id}/edit"),
+                ).props("flat round color=grey-7 aria-label=Edit").tooltip("Edit")
+                with ui.button(icon="more_vert").props("flat round color=grey-7 aria-label=More"):
+                    with ui.menu():
+                        ui.menu_item(
+                            "View details",
+                            on_click=lambda current=job: ui.navigate.to(f"/jobs/{current.id}"),
+                        )
+                        if job.schedule_cron:
+                            ui.menu_item(
+                                "Pause schedule" if job.is_enabled else "Resume schedule",
+                                on_click=lambda current=job: self._toggle_enabled(current),
+                            )
+                        if job.prefect_deployment_id:
+                            ui.menu_item(
+                                "Open in Prefect",
+                                on_click=lambda current=job: self._open_prefect(current),
+                            )
+                        ui.separator()
+                        ui.menu_item(
+                            "Delete job",
+                            on_click=lambda current=job: self._confirm_delete(current),
+                        ).classes("text-negative")
+
+    def _render_run_state(self, run: JobRunSummary | None) -> None:
+        if not run:
+            ui.label("No runs yet").classes("text-body2 text-grey-6")
+            ui.label("—").classes("text-caption text-grey-6")
+            return
+        color = _STATE_COLORS.get(run.state, "grey-6")
+        with ui.row().classes("items-center gap-2"):
+            ui.element("span").classes(f"jobs-state-dot bg-{color}")
+            ui.label(run.state.title()).classes(f"text-body2 text-{color}")
+        detail = self._relative_time(run.started_at) if run.started_at else "Not started"
+        if run.duration_seconds is not None:
+            detail += f" · {self._format_duration(run.duration_seconds)}"
+        ui.label(detail).classes("text-caption text-grey-6")
+
+    async def _refresh_telemetry(self) -> None:
+        try:
+            self._telemetry = await self._telemetry_service.load_dashboard(self._jobs)
+            self._telemetry_error = None
+        except Exception as exc:
+            self._telemetry_error = str(exc)
+        self._render_summary()
+        self._render_rows()
+
+    def _run_now(self, job: Job) -> None:
+        notification = ui.notification(f"Triggering '{job.name}'...", type="ongoing", timeout=None)
+        try:
+            flow_run = self._job_service.run_job(job.id)
+        except Exception as exc:
+            notification.dismiss()
+            ui.notification(f"Could not trigger job: {exc}", type="negative")
+            return
+        notification.dismiss()
+        ui.notification(f"Run '{flow_run.name}' was scheduled.", type="positive")
+        ui.navigate.to(f"/jobs/{job.id}?run={flow_run.id}")
+
+    def _toggle_enabled(self, job: Job) -> None:
+        try:
+            updated = self._job_service.toggle_enabled(job.id)
+        except Exception as exc:
+            ui.notification(f"Could not update schedule: {exc}", type="negative")
+            return
+        if updated:
+            state = "resumed" if updated.is_enabled else "paused"
+            ui.notification(f"Schedule {state}.", type="positive")
+            self._jobs = self._job_service.list_jobs()
+            self._render_summary()
+            self._render_rows()
+
+    def _open_prefect(self, job: Job) -> None:
+        if not job.prefect_deployment_id:
+            return
+        url = prefect_client.deployment_ui_url(UUID(job.prefect_deployment_id))
+        ui.run_javascript(f"window.open({json.dumps(url)}, '_blank')")
+
+    def _confirm_delete(self, job: Job) -> None:
+        with ui.dialog() as dialog, ui.card().classes("q-pa-md").style("min-width: 420px"):
+            ui.label(f"Delete '{job.name}'?").classes("text-h6")
+            ui.label(
+                "The DuckBricks definition and its Prefect deployment will be removed."
+            ).classes("text-body2 text-grey-7")
+            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+
+                def delete() -> None:
+                    self._job_service.delete_job(job.id)
+                    self._jobs = [candidate for candidate in self._jobs if candidate.id != job.id]
+                    dialog.close()
+                    self._render_summary()
+                    self._render_rows()
+                    ui.notification(f"Job '{job.name}' deleted.", type="positive")
+
+                ui.button("Delete", icon="delete", on_click=delete).props("color=negative")
+        dialog.open()
+
+    def _matches_filters(self, job: Job) -> bool:
+        searchable = f"{job.name} {job.description or ''}".casefold()
+        if self._search and self._search not in searchable:
+            return False
+        telemetry = self._telemetry.get(job.id, JobTelemetry())
+        latest_state = telemetry.latest_run.state if telemetry.latest_run else ""
+        return {
+            "All": True,
+            "Scheduled": bool(job.schedule_cron and job.is_enabled),
+            "Manual": not job.schedule_cron,
+            "Running": latest_state in {"RUNNING", "PENDING"},
+            "Failed": latest_state in {"FAILED", "CRASHED"},
+            "Paused": bool(job.schedule_cron and not job.is_enabled),
+        }.get(self._status_filter, True)
+
+    @staticmethod
+    def _metric(label: str, value: str, icon: str, color: str) -> None:
+        with ui.card().classes("q-pa-md"):
+            with ui.row().classes("items-center gap-3 no-wrap"):
+                ui.icon(icon, color=color, size="28px")
+                with ui.column().classes("gap-0"):
+                    ui.label(label).classes("text-caption text-grey-6")
+                    ui.label(value).classes("text-h5 text-weight-medium")
+
+    @staticmethod
+    def _success_rate(runs: list[JobRunSummary]) -> str:
+        cutoff = datetime.now(UTC) - timedelta(days=7)
+        terminal = [
+            run
+            for run in runs
+            if run.state in {"COMPLETED", "FAILED", "CRASHED", "CANCELLED"}
+            and run.started_at
+            and JobsDashboard._as_aware(run.started_at) >= cutoff
+        ]
+        if not terminal:
+            return "—"
+        completed = sum(1 for run in terminal if run.state == "COMPLETED")
+        return f"{completed / len(terminal):.0%}"
+
+    @staticmethod
+    def _relative_time(value: datetime | None) -> str:
+        if value is None:
+            return "—"
+        delta = JobsDashboard._as_aware(value) - datetime.now(UTC)
+        future = delta.total_seconds() > 0
+        seconds = abs(int(delta.total_seconds()))
+        if seconds < 60:
+            amount = "moments"
+        elif seconds < 3600:
+            amount = f"{seconds // 60}m"
+        elif seconds < 86400:
+            amount = f"{seconds // 3600}h"
+        else:
+            amount = f"{seconds // 86400}d"
+        return f"in {amount}" if future else f"{amount} ago"
+
+    @staticmethod
+    def _format_datetime(value: datetime) -> str:
+        return value.astimezone().strftime("%b %d, %H:%M")
+
+    @staticmethod
+    def _format_duration(seconds: float) -> str:
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        minutes, remainder = divmod(int(seconds), 60)
+        if minutes < 60:
+            return f"{minutes}m {remainder}s"
+        hours, minutes = divmod(minutes, 60)
+        return f"{hours}h {minutes}m"
+
+    @staticmethod
+    def _as_aware(value: datetime) -> datetime:
+        return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+
+    @staticmethod
+    def _render_db_unavailable_banner() -> None:
+        with ui.card().classes("w-full bg-orange-1 border-orange"):
+            with ui.row().classes("items-center gap-3 q-pa-md"):
+                ui.icon("warning", color="orange")
+                with ui.column().classes("gap-0"):
+                    ui.label("PostgreSQL not available").classes("text-weight-bold text-orange-9")
+                    ui.label("Jobs require the DuckBricks application database.").classes(
+                        "text-caption text-grey-7"
+                    )
 
 
 def jobs_page() -> None:
-    """Render the Jobs management page."""
-    layout_frame("Jobs")
-
-    with ui.column().classes("w-full h-full p-4 gap-4"):
-        if not DatabaseConnection.is_available() and not DatabaseConnection.check_connectivity():
-            _render_db_unavailable_banner()
-            return
-        _render_page_header()
-        jobs_container = ui.column().classes("w-full gap-2")
-        _render_jobs_list(jobs_container)
-
-
-def _render_db_unavailable_banner() -> None:
-    with ui.card().classes("w-full bg-orange-1 border-orange"):
-        with ui.row().classes("items-center gap-3 q-pa-md"):
-            ui.icon("warning", color="orange").classes("text-h5")
-            with ui.column().classes("gap-1"):
-                ui.label("PostgreSQL not available").classes("text-weight-bold text-orange-9")
-                ui.label(
-                    "The Jobs feature requires a running PostgreSQL database. "
-                    "Start the full stack with docker compose up, or set DATABASE_URL in your .env."
-                ).classes("text-caption text-grey-7")
-
-
-def _render_page_header() -> None:
-    with ui.row().classes("w-full items-center justify-between"):
-        ui.label("Jobs").classes("text-h5 text-weight-bold")
-        ui.button("+ New Job", on_click=lambda: _open_job_dialog(None, None)).props("color=primary")
-
-
-def _render_jobs_list(container: ui.column) -> None:
-    container.clear()
-    try:
-        jobs = _job_service.list_jobs()
-    except OperationalError:
-        with container:
-            _render_db_unavailable_banner()
-        return
-
-    if not jobs:
-        with container:
-            with ui.card().classes("w-full"):
-                ui.label("No jobs yet. Click '+ New Job' to create your first job.").classes(
-                    "text-grey-6 text-center q-pa-lg"
-                )
-        return
-
-    with container:
-        for job in jobs:
-            _render_job_row(job, container)
-
-
-def _render_job_row(job: Job, jobs_container: ui.column) -> None:
-    with ui.card().classes("w-full"):
-        with ui.row().classes("w-full items-center justify-between"):
-            with ui.column().classes("gap-1"):
-                ui.label(job.name).classes("text-weight-bold text-body1")
-                if job.description:
-                    ui.label(job.description).classes("text-grey-7 text-caption")
-                schedule_label = job.schedule_cron if job.schedule_cron else "Manual only"
-                ui.label(f"Schedule: {schedule_label}").classes("text-caption text-grey-6")
-
-            with ui.row().classes("items-center gap-2"):
-                status_icon = "check_circle" if job.is_enabled else "pause_circle"
-                status_color = "green" if job.is_enabled else "grey"
-                status_tooltip = "Disable schedule" if job.is_enabled else "Enable schedule"
-                ui.button(
-                    icon=status_icon,
-                    on_click=lambda j=job, c=jobs_container: _toggle_job_enabled(j, c),
-                ).props(f"flat dense color={status_color}").tooltip(status_tooltip)
-
-                ui.button(
-                    icon="play_arrow",
-                    on_click=lambda j=job, c=jobs_container: _run_job_now(j, c),
-                ).props("flat dense color=primary").tooltip("Run now")
-                ui.button(
-                    icon="history",
-                    on_click=lambda j=job: _open_run_history(j),
-                ).props("flat dense color=grey").tooltip("View run history")
-                ui.button(
-                    icon="open_in_new",
-                    on_click=lambda j=job: _open_deployment_details(j),
-                ).props("flat dense color=grey").tooltip("Deployment details in Prefect")
-                ui.button(
-                    icon="edit",
-                    on_click=lambda j=job, c=jobs_container: _open_job_dialog(j, c),
-                ).props("flat dense color=grey").tooltip("Edit job")
-                ui.button(
-                    icon="delete",
-                    on_click=lambda j=job, c=jobs_container: _confirm_delete_job(j, c),
-                ).props("flat dense color=negative").tooltip("Delete job")
-
-
-def _toggle_job_enabled(job: Job, jobs_container: ui.column) -> None:
-    updated = _job_service.toggle_enabled(job.id)
-    if updated:
-        state = "enabled" if updated.is_enabled else "disabled"
-        ui.notification(f"Job '{updated.name}' {state}.", type="positive")
-    _render_jobs_list(jobs_container)
-
-
-def _run_job_now(job: Job, jobs_container: ui.column) -> None:
-    notification = ui.notification(f"Triggering job '{job.name}'...", type="ongoing", timeout=None)
-    try:
-        flow_run = _job_service.run_job(job.id)
-        notification.dismiss()
-        proxy_path = prefect_client.run_proxy_path(flow_run.id)
-        run_url = prefect_client.run_ui_url(flow_run.id)
-        ui.notification(
-            f"Job '{job.name}' triggered. Run ID: {flow_run.name}",
-            type="positive",
-        )
-        _open_prefect_iframe_dialog(f"Run — {job.name}", proxy_path, run_url)
-    except Exception as exc:
-        notification.dismiss()
-        ui.notification(f"Could not trigger '{job.name}': {exc}", type="negative")
-        _render_jobs_list(jobs_container)
-
-
-def _confirm_delete_job(job: Job, jobs_container: ui.column) -> None:
-    with ui.dialog() as dialog, ui.card():
-        ui.label(f"Delete job '{job.name}'?").classes("text-weight-bold")
-        ui.label("This will also delete the Prefect deployment and all run history.").classes(
-            "text-grey-7"
-        )
-        with ui.row().classes("justify-end gap-2 q-mt-md"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-
-            def _confirm_delete() -> None:
-                _job_service.delete_job(job.id)
-                dialog.close()
-                if jobs_container:
-                    _render_jobs_list(jobs_container)
-
-            ui.button(
-                "Delete",
-                on_click=_confirm_delete,
-            ).props("color=negative")
-    dialog.open()
-
-
-def _open_deployment_details(job: Job) -> None:
-    if not job.prefect_deployment_id:
-        ui.notification("No Prefect deployment registered for this job.", type="warning")
-        return
-    dep_id = UUID(job.prefect_deployment_id)
-    proxy_path = prefect_client.deployment_proxy_path(dep_id)
-    external_url = prefect_client.deployment_ui_url(dep_id)
-    _open_prefect_iframe_dialog(f"Deployment — {job.name}", proxy_path, external_url)
-
-
-_PAGE_SIZE = 10
-
-
-def _open_run_history(job: Job) -> None:
-    runs = _job_service.list_executions(job.id)
-    page_index = {"value": 0}
-    total_pages = max(1, -(-len(runs) // _PAGE_SIZE))  # ceiling division
-
-    with ui.dialog() as dialog, ui.card().classes("w-full").style("min-width: 640px"):
-        with ui.row().classes("w-full items-center justify-between q-mb-md"):
-            ui.label(f"Run History — {job.name}").classes("text-h6")
-            ui.button(icon="close", on_click=dialog.close).props("flat dense")
-
-        if not runs:
-            ui.label("No runs yet.").classes("text-grey-6")
-        else:
-            rows_container = ui.column().classes("w-full gap-1")
-            page_label = ui.label("").classes("text-caption text-grey-6 self-center")
-
-            def render_page() -> None:
-                rows_container.clear()
-                start = page_index["value"] * _PAGE_SIZE
-                page_runs = runs[start : start + _PAGE_SIZE]
-                with rows_container:
-                    for run in page_runs:
-                        _render_flow_run_row(run, dialog)
-                page_label.set_text(
-                    f"Page {page_index['value'] + 1} of {total_pages}  ({len(runs)} runs total)"
-                )
-                prev_btn.props("disabled" if page_index["value"] == 0 else "")
-                next_btn.props("disabled" if page_index["value"] >= total_pages - 1 else "")
-
-            def go_prev() -> None:
-                page_index["value"] -= 1
-                render_page()
-
-            def go_next() -> None:
-                page_index["value"] += 1
-                render_page()
-
-            with ui.row().classes("w-full items-center justify-between q-mt-sm"):
-                prev_btn = ui.button(icon="chevron_left", on_click=go_prev).props(
-                    "flat dense disabled"
-                )
-                page_label
-                next_btn = ui.button(icon="chevron_right", on_click=go_next).props(
-                    "flat dense" + (" disabled" if total_pages <= 1 else "")
-                )
-
-            render_page()
-    dialog.open()
-
-
-def _render_flow_run_row(run: FlowRun, parent_dialog: ui.dialog) -> None:
-    state_name = run.state_name or "UNKNOWN"
-    color = _STATE_COLORS.get(state_name.upper(), "grey")
-    started = str(run.start_time)[:19] if run.start_time else "—"
-    duration = f"{int(run.total_run_time.total_seconds())}s" if run.total_run_time else "—"
-    proxy_path = prefect_client.run_proxy_path(run.id)
-    run_url = prefect_client.run_ui_url(run.id)
-
-    def _open_run() -> None:
-        parent_dialog.close()
-        _open_prefect_iframe_dialog(f"Run — {run.name}", proxy_path, run_url)
-
-    with ui.card().classes("w-full cursor-pointer hover:bg-grey-2").on("click", _open_run):
-        with ui.row().classes("w-full items-center justify-between q-pa-sm"):
-            with ui.row().classes("items-center gap-2"):
-                ui.icon("circle", color=color).classes("text-xs")
-                ui.label(run.name or str(run.id)).classes("text-weight-medium")
-                ui.label(state_name.upper()).classes(f"text-caption text-{color}")
-            with ui.row().classes("items-center gap-4"):
-                ui.label(started).classes("text-caption text-grey-6")
-                ui.label(duration).classes("text-caption text-grey-6")
-
-
-def _open_prefect_iframe_dialog(title: str, proxy_path: str, external_url: str) -> None:
-    """Open a full-screen dialog embedding the Prefect UI via the same-origin proxy.
-
-    The iframe uses the proxy path (same origin) to avoid X-Frame-Options blocking.
-    The external URL is offered as a fallback "Open in new tab" link.
-    """
-    with ui.dialog().props("maximized") as dialog, ui.card().classes("w-full h-full"):
-        with ui.row().classes("w-full items-center justify-between q-pa-sm"):
-            ui.label(title).classes("text-h6")
-            with ui.row().classes("items-center gap-2"):
-                ui.link("Open in new tab", external_url, new_tab=True).classes(
-                    "text-caption text-primary"
-                )
-                ui.button(icon="close", on_click=dialog.close).props("flat dense")
-        ui.html(
-            f'<iframe src="{proxy_path}" '
-            f'style="width:100%;height:calc(100vh - 80px);border:none;"></iframe>',
-            sanitize=False,
-        ).classes("w-full h-full mb-[-16px]")
-    dialog.open()
-
-
-def _open_job_dialog(job: Job | None, jobs_container: ui.column | None) -> None:
-    is_edit = job is not None
-    tasks: list[dict] = []
-    task_elements: list[dict] = []
-
-    if is_edit and job:
-        tasks = [
-            {
-                "name": t.name,
-                "executor_type": t.executor_type,
-                "content": t.content,
-                "file_path": t.file_path,
-                "position": t.position,
-            }
-            for t in (job.tasks or [])
-        ]
-
-    with (
-        ui.dialog() as dialog,
-        ui.card().classes("w-full").style("min-width: 700px; max-height: 90vh; overflow-y: auto"),
-    ):
-        ui.label("Edit Job" if is_edit else "New Job").classes("text-h6 q-mb-md")
-
-        name_input = ui.input("Job name", value=job.name if job else "").classes("w-full")
-        desc_input = ui.textarea(
-            "Description",
-            value=job.description if job and job.description else "",
-        ).classes("w-full")
-        cron_input = ui.input(
-            "Cron schedule (e.g. 0 0 * * *)",
-            value=job.schedule_cron if job and job.schedule_cron else "",
-        ).classes("w-full")
-
-        ui.label("Tasks").classes("text-subtitle1 text-weight-bold q-mt-md")
-        tasks_container = ui.column().classes("w-full gap-2")
-
-        def render_tasks() -> None:
-            task_elements.clear()
-            tasks_container.clear()
-            with tasks_container:
-                for idx, task_def in enumerate(tasks):
-                    els = _render_task_editor(task_def, idx, tasks, render_tasks)
-                    task_elements.append(els)
-
-        render_tasks()
-
-        with ui.row().classes("q-mt-sm"):
-
-            def _add_task() -> None:
-                tasks.append(
-                    {
-                        "name": "New Task",
-                        "executor_type": "sql",
-                        "content": "",
-                        "file_path": None,
-                        "position": len(tasks),
-                    }
-                )
-                render_tasks()
-
-            ui.button("+ Add Task", on_click=_add_task).props("flat color=primary")
-
-        with ui.row().classes("justify-end gap-2 q-mt-lg"):
-            ui.button("Cancel", on_click=dialog.close).props("flat")
-            ui.button(
-                "Save",
-                on_click=lambda: _save_job(
-                    job,
-                    name_input.value,
-                    desc_input.value,
-                    cron_input.value,
-                    tasks,
-                    task_elements,
-                    dialog,
-                    jobs_container,
-                ),
-            ).props("color=primary")
-
-    dialog.open()
-
-
-def _render_task_editor(task_def: dict, idx: int, tasks: list[dict], on_change) -> dict:
-    """Render a single task editor card and return a dict of element references."""
-    elements: dict = {}
-
-    with ui.card().classes("w-full bg-grey-1"):
-        with ui.row().classes("w-full items-center justify-between"):
-            ui.label(f"Task {idx + 1}").classes("text-weight-bold")
-            ui.button(
-                icon="delete",
-                on_click=lambda i=idx: [tasks.pop(i), on_change()],
-            ).props("flat dense color=negative")
-
-        elements["name"] = ui.input("Task name", value=task_def.get("name", "")).classes("w-full")
-
-        initial_executor = task_def.get("executor_type", "sql")
-        executor_select = ui.select(
-            ["sql", "python"],
-            label="Executor type",
-            value=initial_executor,
-        ).classes("w-full")
-        elements["executor_type"] = executor_select
-
-        use_file = bool(task_def.get("file_path"))
-        mode_toggle = ui.toggle(
-            ["Inline", "File"],
-            value="File" if use_file else "Inline",
-        ).classes("q-mt-sm")
-
-        initial_lang = "SQL" if initial_executor == "sql" else "Python"
-        inline_editor = (
-            ui.codemirror(
-                value=task_def.get("content", ""),
-                language=initial_lang,  # type: ignore[arg-type]
-                theme="githubLight",
-            )
-            .classes("w-full")
-            .style("min-height: 120px")
-        )
-
-        workspace_files = _list_workspace_files(initial_executor)
-        file_path = task_def.get("file_path")
-        file_select = ui.select(
-            workspace_files,
-            label="Workspace file",
-            value=file_path if file_path in workspace_files else None,
-        ).classes("w-full")
-
-        def _apply_mode(mode: str) -> None:
-            if mode == "File":
-                inline_editor.set_visibility(False)
-                file_select.set_visibility(True)
-            else:
-                inline_editor.set_visibility(True)
-                file_select.set_visibility(False)
-
-        def _apply_executor_language(executor: str) -> None:
-            lang = "SQL" if executor == "sql" else "Python"
-            inline_editor.set_language(lang)  # type: ignore[arg-type]
-            inline_editor.update()
-            new_files = _list_workspace_files(executor)
-            file_select.options = new_files
-            if file_select.value not in new_files:
-                file_select.value = None
-            file_select.update()
-
-        _apply_mode(mode_toggle.value)
-        mode_toggle.on_value_change(lambda e: _apply_mode(e.value))
-        executor_select.on_value_change(lambda e: _apply_executor_language(e.value))
-
-        elements["content"] = inline_editor
-        elements["file_path"] = file_select
-        elements["mode"] = mode_toggle
-
-    return elements
-
-
-def _save_job(
-    existing_job: Job | None,
-    name: str,
-    description: str,
-    schedule_cron: str,
-    tasks: list[dict],
-    task_elements: list[dict],
-    dialog,
-    jobs_container: ui.column | None,
-) -> None:
-    if not name.strip():
-        ui.notification("Job name is required.", type="warning")
-        return
-
-    _flush_task_elements_into_dicts(tasks, task_elements)
-
-    cron = schedule_cron.strip() if schedule_cron.strip() else None
-
-    if existing_job:
-        saved_job = _job_service.update_job(
-            existing_job.id,
-            name=name,
-            description=description or None,
-            schedule_cron=cron,
-        )
-        if not saved_job:
-            ui.notification("Failed to update job.", type="negative")
-            return
-        _job_service.replace_tasks(saved_job.id, tasks)
-    else:
-        saved_job = _job_service.create_job(name, description or None, cron)
-        _job_service.replace_tasks(saved_job.id, tasks)
-
-    dialog.close()
-    ui.notification(f"Job '{saved_job.name}' saved.", type="positive")
-    if jobs_container:
-        _render_jobs_list(jobs_container)
-
-
-def _flush_task_elements_into_dicts(tasks: list[dict], task_elements: list[dict]) -> None:
-    """Read current UI element values into the task dicts before saving."""
-    for idx, els in enumerate(task_elements):
-        if idx >= len(tasks):
-            break
-        tasks[idx]["name"] = els["name"].value
-        tasks[idx]["executor_type"] = els["executor_type"].value
-        mode = els["mode"].value
-        if mode == "File":
-            tasks[idx]["file_path"] = els["file_path"].value
-            tasks[idx]["content"] = ""
-        else:
-            tasks[idx]["content"] = els["content"].value
-            tasks[idx]["file_path"] = None
+    """Render the Jobs operations dashboard."""
+    JobsDashboard(JobService(), JobTelemetryService(prefect_client)).render()

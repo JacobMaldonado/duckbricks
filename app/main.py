@@ -14,6 +14,8 @@ from app.services.health import health_service
 from app.services.metastore import manager
 from app.services.startup import ApplicationStartup
 from app.ui.pages.explorer import explorer_page
+from app.ui.pages.job_detail import job_detail_page
+from app.ui.pages.job_editor import job_editor_page
 from app.ui.pages.job_execution import job_execution_page
 from app.ui.pages.jobs import jobs_page
 from app.ui.pages.query import query_workspace
@@ -86,6 +88,24 @@ def query(table: str | None = None):
 def jobs():
     """Jobs management page."""
     jobs_page()
+
+
+@ui.page("/jobs/new")
+def new_job():
+    """Create a workspace-backed job."""
+    job_editor_page()
+
+
+@ui.page("/jobs/{job_id}/edit")
+def edit_job(job_id: int):
+    """Edit a workspace-backed job."""
+    job_editor_page(job_id)
+
+
+@ui.page("/jobs/{job_id}")
+def job_detail(job_id: int, run: str | None = None):
+    """Job definition and Prefect run details."""
+    job_detail_page(job_id, run)
 
 
 @ui.page("/jobs/execution/{execution_id}")

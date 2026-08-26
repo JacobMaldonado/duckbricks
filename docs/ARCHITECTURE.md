@@ -1,7 +1,7 @@
 # DuckBricks Architecture
 
-**Version:** 0.3.0
-**Last Updated:** 2026-08-24
+**Version:** 0.4.0
+**Last Updated:** 2026-08-25
 **Status:** Living Document
 
 ---
@@ -116,7 +116,8 @@ All components are containerized and orchestrated via Docker Compose for local/s
 NiceGUI is a Python-based UI framework that enables rapid development of web interfaces without JavaScript. It's ideal for data tools where Python developers can build full-stack applications without context switching.
 
 **Architecture Integration:**
-- **Entry Point:** `app/main.py` defines page routes (`/explorer`, `/query`)
+- **Entry Point:** `app/main.py` defines page routes for the metastore, query workspace,
+  job dashboard/detail/editor, workspace, and settings
 - **Components:** Reusable UI components in `app/ui/components/`
 - **Pages:** Full-page views in `app/ui/pages/`
 - **State Management:** NiceGUI's reactive state binding for UI updates
@@ -128,6 +129,9 @@ NiceGUI is a Python-based UI framework that enables rapid development of web int
   DuckLake history, and physical properties. Quality, usage, tags, and lineage intentionally
   remain unconfigured until DuckBricks has dedicated application services for them.
 - Query Workspace: SQL editor with schema browser and results table
+- Jobs: an operations dashboard backed by live Prefect telemetry, native job/run detail,
+  and a full-page pipeline editor with a workspace file picker, schedule builder, dependency
+  controls, and Mermaid DAG preview
 
 **Future Enhancements:**
 - Dashboard widgets (query history, job status, data lineage)
@@ -294,7 +298,14 @@ Prefect provides Pythonic workflow orchestration with a modern UI, dynamic DAGs,
 - DuckBricks defines its flow in `app/services/jobs/prefect_flows.py`
 - The application creates and updates Prefect deployments through `PrefectApiClient`
 - The `duckbricks-worker` executes deployments from the `duckbricks-pool` work pool
-- Job definitions are stored in PostgreSQL; run state and logs are read from Prefect
+- Job definitions and dependency edges are stored in PostgreSQL; run state, task state, and
+  logs are read directly from Prefect rather than duplicated in the application database
+- `JobGraphService` validates task sources, missing dependencies, self-dependencies, and cycles,
+  and produces a stable topological execution order
+- Independent root tasks are submitted concurrently. Downstream Prefect tasks receive their
+  upstream futures through `wait_for`, so fan-out and fan-in graphs preserve their dependencies
+- Schedules use five-field cron expressions plus an IANA timezone and are synchronized to the
+  corresponding Prefect deployment
 
 **Example Workflow:**
 ```python
@@ -539,143 +550,43 @@ CREATE INDEX idx_columns_name_gin ON metastore.columns USING gin(to_tsvector('en
 
 ### 4.3 Application Schema
 
-**Purpose:** Store user accounts, workspaces, saved queries, job definitions, and execution logs.
+The `app` schema currently stores jobs, job tasks, DAG edges, legacy execution records, Git
+connections/folders, and persisted query tabs. The SQLAlchemy models in
+`app/services/database/models/app.py` are the source of truth.
 
-```sql
-CREATE SCHEMA app;
+The job-specific relationship is:
 
--- Users
-CREATE TABLE app.users (
-    id SERIAL PRIMARY KEY,
-    username VARCHAR(255) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    hashed_password VARCHAR(255) NOT NULL,
-    is_active BOOLEAN DEFAULT TRUE,
-    is_admin BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Workspaces (multi-tenancy)
-CREATE TABLE app.workspaces (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) UNIQUE NOT NULL,
-    description TEXT,
-    created_by INTEGER NOT NULL REFERENCES app.users(id),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Workspace Members
-CREATE TABLE app.workspace_members (
-    id SERIAL PRIMARY KEY,
-    workspace_id INTEGER NOT NULL REFERENCES app.workspaces(id) ON DELETE CASCADE,
-    user_id INTEGER NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'editor', 'viewer')),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(workspace_id, user_id)
-);
-
--- Saved Queries
-CREATE TABLE app.queries (
-    id SERIAL PRIMARY KEY,
-    workspace_id INTEGER NOT NULL REFERENCES app.workspaces(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    sql_text TEXT NOT NULL,
-    created_by INTEGER NOT NULL REFERENCES app.users(id),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Query Execution History
-CREATE TABLE app.query_executions (
-    id SERIAL PRIMARY KEY,
-    query_id INTEGER REFERENCES app.queries(id) ON DELETE SET NULL,
-    workspace_id INTEGER NOT NULL REFERENCES app.workspaces(id) ON DELETE CASCADE,
-    executed_by INTEGER NOT NULL REFERENCES app.users(id),
-    sql_text TEXT NOT NULL,
-    status VARCHAR(50) NOT NULL CHECK (status IN ('running', 'success', 'failed', 'cancelled')),
-    started_at TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ,
-    duration_ms INTEGER,
-    row_count INTEGER,
-    error_message TEXT,
-    result_location TEXT  -- Path to cached results (e.g., S3 path)
-);
-
--- Jobs (scheduled queries / workflows)
-CREATE TABLE app.jobs (
-    id SERIAL PRIMARY KEY,
-    workspace_id INTEGER NOT NULL REFERENCES app.workspaces(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    job_type VARCHAR(50) NOT NULL CHECK (job_type IN ('query', 'workflow')),
-    schedule_cron VARCHAR(100),  -- Cron expression (e.g., "0 0 * * *" for daily at midnight)
-    is_enabled BOOLEAN DEFAULT TRUE,
-    query_id INTEGER REFERENCES app.queries(id) ON DELETE SET NULL,
-    workflow_definition JSONB,  -- For complex workflows
-    created_by INTEGER NOT NULL REFERENCES app.users(id),
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Job Execution History
-CREATE TABLE app.job_executions (
-    id SERIAL PRIMARY KEY,
-    job_id INTEGER NOT NULL REFERENCES app.jobs(id) ON DELETE CASCADE,
-    status VARCHAR(50) NOT NULL CHECK (status IN ('running', 'success', 'failed', 'cancelled')),
-    started_at TIMESTAMPTZ DEFAULT NOW(),
-    completed_at TIMESTAMPTZ,
-    duration_ms INTEGER,
-    error_message TEXT,
-    logs_location TEXT  -- Path to execution logs
-);
-
--- Indexes
-CREATE INDEX idx_workspace_members_workspace_id ON app.workspace_members(workspace_id);
-CREATE INDEX idx_workspace_members_user_id ON app.workspace_members(user_id);
-CREATE INDEX idx_queries_workspace_id ON app.queries(workspace_id);
-CREATE INDEX idx_query_executions_workspace_id ON app.query_executions(workspace_id);
-CREATE INDEX idx_query_executions_executed_by ON app.query_executions(executed_by);
-CREATE INDEX idx_query_executions_started_at ON app.query_executions(started_at DESC);
-CREATE INDEX idx_jobs_workspace_id ON app.jobs(workspace_id);
-CREATE INDEX idx_job_executions_job_id ON app.job_executions(job_id);
-CREATE INDEX idx_job_executions_started_at ON app.job_executions(started_at DESC);
+```text
+jobs
+  id, name, description, schedule_cron, schedule_timezone, is_enabled,
+  graph_version, prefect_deployment_id, created_at, updated_at
+   │
+   └──< job_tasks
+          id, job_id, name, executor_type, content, file_path, position
+           │
+           └──< job_task_dependencies >── job_tasks
+                  task_id                 depends_on_task_id
 ```
+
+- `file_path` is stored relative to the configured workspace and is constrained by the service
+  to supported SQL or Python files. `content` remains only for executing pre-existing inline jobs;
+  the current editor neither creates nor updates inline source.
+- `position` controls presentation order, while `job_task_dependencies` controls execution order.
+- `graph_version` lets startup migrations distinguish legacy linear jobs from explicit DAGs.
+- `prefect_deployment_id` associates the local definition with its Prefect deployment.
+- Prefect is authoritative for current run/task state and logs. The older `job_executions` and
+  `task_executions` tables remain for compatibility but are not the Jobs UI telemetry source.
 
 ### 4.4 Migration Strategy
 
-**Tool:** Alembic (SQLAlchemy's migration tool)
+DuckBricks currently performs additive, idempotent startup migrations in
+`app/services/database/session.py`; Alembic is installed but has not yet replaced this mechanism.
+For the job DAG migration, startup adds timezone and graph-version columns, creates the dependency
+edge table, converts each pre-existing ordered task list to a linear dependency chain once, and
+then marks the job as graph version 1. New graphs preserve explicit roots, branches, and joins.
 
-**Workflow:**
-1. Define schema changes in Alembic migration files (`migrations/versions/`)
-2. Run `alembic upgrade head` to apply migrations
-3. Migrations run automatically on container startup (via entrypoint script)
-
-**Example Migration:**
-```python
-"""Create metastore schema
-
-Revision ID: 001_create_metastore
-"""
-from alembic import op
-import sqlalchemy as sa
-
-def upgrade():
-    op.execute("CREATE SCHEMA metastore")
-    op.create_table(
-        'catalogs',
-        sa.Column('id', sa.Integer, primary_key=True),
-        sa.Column('name', sa.String(255), unique=True, nullable=False),
-        ...
-        schema='metastore'
-    )
-
-def downgrade():
-    op.drop_table('catalogs', schema='metastore')
-    op.execute("DROP SCHEMA metastore")
-```
+The startup approach only supports safe forward additions. Destructive or data-transforming schema
+changes should move to versioned Alembic revisions before they are needed in production.
 
 ### 4.5 Database Abstraction Layer
 
@@ -1135,35 +1046,28 @@ Prefect scheduled job (every 5 minutes)
 ### 6.4 Job Scheduling and Execution Flow
 
 ```
-User creates a scheduled query
+User creates or edits a job
     │
-    ├─► POST /api/jobs
-    │   Body: {"name": "daily_report", "schedule": "0 0 * * *", "sql": "..."}
-    │
-    └──────────────────────────────────────▼
-                            JobService.create_job(...)
-                                    │
-                                    ├─► JobRepository.save_job(...)  [Postgres]
-                                    │
-                                    └─► WorkflowScheduler.register_workflow(...)  [Prefect]
-                                            │
-                                            └─► Prefect stores workflow definition
+    ├─► Job editor selects workspace SQL/Python files
+    ├─► Schedule builder emits cron + timezone (or manual-only)
+    ├─► Dependency controls and live Mermaid preview define the DAG
+    └─► JobService.save_job_definition(...)
+            ├─► JobGraphService validates sources and acyclicity
+            ├─► PostgreSQL transaction upserts tasks and dependency edges
+            └─► PrefectApiClient creates/updates the deployment and schedule
 
-Prefect triggers job (cron: 0 0 * * *)
+Prefect schedule or user triggers deployment
     │
-    └─► Prefect calls: JobWorkflow.run(job_id)
-            │
-            ├─► JobService.execute_job(job_id)
-            │       │
-            │       ├─► JobRepository.get_job(job_id)  [Postgres]
-            │       │
-            │       ├─► QueryService.execute_query(sql)  [DuckDB]
-            │       │
-            │       ├─► StorageBackend.write("results/...", result)  [S3/MinIO]
-            │       │
-            │       └─► JobRepository.save_execution_log(...)  [Postgres]
-            │
-            └─► Send notification (email, Slack, etc.)
+    └─► run_job_flow(job_id)
+            ├─► Load an immutable job/task/dependency snapshot [PostgreSQL]
+            ├─► Submit root tasks concurrently
+            ├─► Submit downstream tasks with Prefect wait_for dependencies
+            ├─► Execute SQL through QueryService or Python through runpy
+            └─► Prefect owns run state, task state, timing, and logs
+
+Jobs dashboard/detail page
+    └─► JobTelemetryService
+            └─► PrefectApiClient batches recent/scheduled flows, task runs, and logs
 ```
 
 ### 6.5 File Upload and Storage Flow

@@ -50,6 +50,46 @@ def _apply_migrations(engine) -> None:
         )
         conn.execute(
             text(
+                "ALTER TABLE app.jobs"
+                " ADD COLUMN IF NOT EXISTS schedule_timezone VARCHAR(100)"
+                " NOT NULL DEFAULT 'UTC'"
+            )
+        )
+        conn.execute(
+            text(
+                "ALTER TABLE app.jobs"
+                " ADD COLUMN IF NOT EXISTS graph_version INTEGER NOT NULL DEFAULT 0"
+            )
+        )
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS app.job_task_dependencies ("
+                "  task_id INTEGER NOT NULL"
+                "    REFERENCES app.job_tasks(id) ON DELETE CASCADE,"
+                "  depends_on_task_id INTEGER NOT NULL"
+                "    REFERENCES app.job_tasks(id) ON DELETE CASCADE,"
+                "  PRIMARY KEY (task_id, depends_on_task_id),"
+                "  CHECK (task_id <> depends_on_task_id)"
+                ")"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO app.job_task_dependencies (task_id, depends_on_task_id) "
+                "SELECT current_task.id, previous_task.id "
+                "FROM app.jobs job "
+                "JOIN app.job_tasks current_task ON current_task.job_id = job.id "
+                "JOIN app.job_tasks previous_task "
+                "  ON previous_task.job_id = current_task.job_id "
+                " AND previous_task.position = current_task.position - 1 "
+                "WHERE job.graph_version = 0 "
+                "ON CONFLICT DO NOTHING"
+            )
+        )
+        conn.execute(text("UPDATE app.jobs SET graph_version = 1 WHERE graph_version = 0"))
+        conn.execute(text("ALTER TABLE app.jobs ALTER COLUMN graph_version SET DEFAULT 1"))
+        conn.execute(
+            text(
                 "CREATE TABLE IF NOT EXISTS app.git_connections ("
                 "  id SERIAL PRIMARY KEY,"
                 "  name VARCHAR(255) NOT NULL,"

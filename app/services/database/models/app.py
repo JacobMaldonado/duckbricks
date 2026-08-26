@@ -2,7 +2,17 @@
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, LargeBinary, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.services.database.base import Base
@@ -18,7 +28,13 @@ class Job(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
     schedule_cron: Mapped[str | None] = mapped_column(String(100))
+    schedule_timezone: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="UTC", server_default="UTC"
+    )
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    graph_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default=text("1")
+    )
     prefect_deployment_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
@@ -51,6 +67,39 @@ class JobTask(Base):
     executions: Mapped[list["TaskExecution"]] = relationship(
         "TaskExecution", back_populates="task", cascade="all, delete-orphan"
     )
+    dependency_edges: Mapped[list["JobTaskDependency"]] = relationship(
+        "JobTaskDependency",
+        foreign_keys="JobTaskDependency.task_id",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+
+class JobTaskDependency(Base):
+    """A directed edge from one job task to an upstream task in the same job."""
+
+    __tablename__ = "job_task_dependencies"
+    __table_args__ = (
+        CheckConstraint("task_id <> depends_on_task_id", name="ck_job_task_dependency_not_self"),
+        {"schema": "app"},
+    )
+
+    task_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("app.job_tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    depends_on_task_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("app.job_tasks.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+    task: Mapped["JobTask"] = relationship(
+        "JobTask", foreign_keys=[task_id], back_populates="dependency_edges"
+    )
+    depends_on_task: Mapped["JobTask"] = relationship("JobTask", foreign_keys=[depends_on_task_id])
 
 
 class JobExecution(Base):

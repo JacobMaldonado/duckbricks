@@ -157,7 +157,11 @@ class WorkspaceService:
 
     def relative_path(self, absolute_path: str) -> str:
         """Return the workspace-relative path for an absolute filesystem path."""
-        return str(Path(absolute_path).relative_to(self._root))
+        resolved = Path(absolute_path).resolve()
+        try:
+            return str(resolved.relative_to(self._root))
+        except ValueError as exc:
+            raise ValueError(f"Path '{absolute_path}' escapes the workspace root.") from exc
 
     def _resolve_safe(self, relative_path: str) -> Path:
         """Resolve path and guard against directory traversal attacks."""

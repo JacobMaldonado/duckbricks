@@ -3,15 +3,21 @@
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
 from prefect.client.schemas.objects import FlowRun
 from sqlalchemy.orm import Session
 
-from app.services.database.models.app import Job, JobTask
+from app.config import WORKSPACE_PATH
+from app.services.database.models.app import Job, JobTask, JobTaskDependency
 from app.services.database.session import get_session
+from app.services.jobs.graph_service import JobGraphService, JobGraphValidationError
+from app.services.jobs.models import JobDefinitionInput, JobTaskInput, JobTaskSnapshot
+from app.services.jobs.schedule_service import JobScheduleService
 from app.services.prefect import prefect_client
+from app.services.workspace import WorkspaceService
 
 _log = logging.getLogger(__name__)
 
@@ -45,7 +51,7 @@ class JobService:
         with get_session() as session:
             jobs: list[Job] = session.query(Job).order_by(Job.created_at.desc()).all()
             for job in jobs:
-                _ = job.tasks
+                self._load_task_relationships(job)
             session.expunge_all()
             return jobs
 
@@ -53,9 +59,93 @@ class JobService:
         with get_session() as session:
             job: Job | None = session.query(Job).filter(Job.id == job_id).first()
             if job:
-                _ = job.tasks
+                self._load_task_relationships(job)
                 session.expunge_all()
             return job
+
+    def save_job_definition(
+        self, definition: JobDefinitionInput, *, job_id: int | None = None
+    ) -> Job:
+        """Validate and persist a complete job definition as one transaction."""
+        normalized_name = definition.name.strip()
+        if not normalized_name:
+            raise ValueError("Job name is required.")
+        if not definition.tasks:
+            raise JobGraphValidationError("A job requires at least one task.")
+
+        JobScheduleService.validate(definition.schedule_cron, definition.schedule_timezone)
+        normalized_tasks = self._normalize_task_sources(definition.tasks)
+        JobGraphService.validate_inputs(normalized_tasks)
+
+        with get_session() as session:
+            if job_id is None:
+                persisted_job = Job()
+                job = persisted_job
+                session.add(job)
+            else:
+                existing_job = session.query(Job).filter(Job.id == job_id).first()
+                if not existing_job:
+                    raise ValueError(f"Job {job_id} not found.")
+                job = existing_job
+
+            job.name = normalized_name
+            job.description = definition.description.strip() if definition.description else None
+            job.schedule_cron = definition.schedule_cron
+            job.schedule_timezone = definition.schedule_timezone
+            job.is_enabled = definition.is_enabled
+            job.graph_version = 1
+            session.flush()
+
+            existing_tasks = {task.id: task for task in job.tasks}
+            retained_ids: set[int] = set()
+            task_by_key: dict[str, JobTask] = {}
+            for position, task_input in enumerate(normalized_tasks):
+                task = existing_tasks.get(task_input.task_id) if task_input.task_id else None
+                if task_input.task_id and not task:
+                    raise ValueError(f"Task {task_input.task_id} does not belong to job {job.id}.")
+                if task is None:
+                    task = JobTask(job_id=job.id)
+                    session.add(task)
+                task.name = task_input.name.strip()
+                task.executor_type = task_input.executor_type
+                task.content = task_input.legacy_content if not task_input.file_path else ""
+                task.file_path = task_input.file_path
+                task.position = position
+                session.flush()
+                retained_ids.add(task.id)
+                task_by_key[task_input.key] = task
+
+            all_existing_ids = set(existing_tasks)
+            all_persisted_ids = retained_ids | all_existing_ids
+            if all_persisted_ids:
+                session.query(JobTaskDependency).filter(
+                    JobTaskDependency.task_id.in_(all_persisted_ids)
+                ).delete(synchronize_session=False)
+
+            for removed_id in all_existing_ids - retained_ids:
+                session.delete(existing_tasks[removed_id])
+            session.flush()
+
+            input_by_key = {task.key: task for task in normalized_tasks}
+            for key, task in task_by_key.items():
+                for dependency_key in input_by_key[key].depends_on:
+                    session.add(
+                        JobTaskDependency(
+                            task_id=task.id,
+                            depends_on_task_id=task_by_key[dependency_key].id,
+                        )
+                    )
+            session.flush()
+            saved_job_id = job.id
+
+        saved_job = self.get_job(saved_job_id)
+        if not saved_job:
+            raise RuntimeError(f"Job {saved_job_id} disappeared after it was saved.")
+        if job_id is None:
+            self._register_deployment(saved_job)
+        else:
+            self._sync_deployment(saved_job)
+        return saved_job
 
     def update_job(self, job_id: int, **fields: Any) -> Job | None:
         with get_session() as session:
@@ -163,23 +253,69 @@ class JobService:
             _log.warning("Could not fetch run history for job %d: %s", job_id, exc)
             return []
 
-    def get_task_snapshots(self, job_id: int) -> list[dict[str, Any]]:
+    def get_task_snapshots(self, job_id: int) -> list[JobTaskSnapshot]:
         """Return ordered task snapshots for a job, ready for Prefect task execution."""
         with get_session() as session:
             job = session.query(Job).filter(Job.id == job_id).first()
             if not job:
                 raise ValueError(f"Job {job_id} not found")
             return [
-                {
-                    "id": t.id,
-                    "name": t.name,
-                    "executor_type": t.executor_type,
-                    "content": t.content,
-                    "file_path": t.file_path,
-                    "position": t.position,
-                }
-                for t in sorted(job.tasks, key=lambda t: t.position)
+                JobTaskSnapshot(
+                    task_id=task.id,
+                    name=task.name,
+                    executor_type=task.executor_type,
+                    legacy_content=task.content,
+                    file_path=task.file_path,
+                    position=task.position,
+                    dependency_ids=tuple(edge.depends_on_task_id for edge in task.dependency_edges),
+                )
+                for task in sorted(job.tasks, key=lambda item: item.position)
             ]
+
+    @staticmethod
+    def _load_task_relationships(job: Job) -> None:
+        for task in job.tasks:
+            _ = task.dependency_edges
+
+    @staticmethod
+    def _normalize_task_sources(
+        tasks: tuple[JobTaskInput, ...],
+    ) -> tuple[JobTaskInput, ...]:
+        workspace = WorkspaceService(WORKSPACE_PATH)
+        normalized: list[JobTaskInput] = []
+        for task in tasks:
+            if not task.file_path:
+                normalized.append(task)
+                continue
+            source_path = Path(task.file_path)
+            try:
+                relative_path = (
+                    workspace.relative_path(str(source_path))
+                    if source_path.is_absolute()
+                    else str(source_path)
+                )
+                absolute_path = Path(workspace.absolute_path(relative_path))
+            except (ValueError, OSError) as exc:
+                raise JobGraphValidationError(
+                    f"Task '{task.name}' points outside the workspace."
+                ) from exc
+            if not absolute_path.is_file():
+                raise JobGraphValidationError(
+                    f"Workspace file for task '{task.name}' does not exist: {relative_path}."
+                )
+            executor_type = JobGraphService.executor_for_path(relative_path)
+            normalized.append(
+                JobTaskInput(
+                    key=task.key,
+                    name=task.name,
+                    file_path=relative_path,
+                    executor_type=executor_type,
+                    depends_on=task.depends_on,
+                    task_id=task.task_id,
+                    legacy_content=task.legacy_content,
+                )
+            )
+        return tuple(normalized)
 
     def _register_deployment(self, job: Job) -> None:
         try:

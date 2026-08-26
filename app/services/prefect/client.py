@@ -1,6 +1,7 @@
 """Async wrapper around the Prefect REST API for DuckBricks job orchestration."""
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -16,10 +17,15 @@ from prefect.client.schemas.filters import (
     FlowRunFilter,
     FlowRunFilterState,
     FlowRunFilterStateType,
+    LogFilter,
+    LogFilterFlowRunId,
+    LogFilterTaskRunId,
+    TaskRunFilter,
+    TaskRunFilterFlowRunId,
 )
-from prefect.client.schemas.objects import FlowRun
+from prefect.client.schemas.objects import FlowRun, Log, TaskRun
 from prefect.client.schemas.schedules import CronSchedule
-from prefect.client.schemas.sorting import FlowRunSort
+from prefect.client.schemas.sorting import FlowRunSort, LogSort, TaskRunSort
 from prefect.exceptions import ObjectNotFound
 from prefect.states import StateType
 
@@ -34,6 +40,7 @@ _FLOW_NAME = "duckbricks-job"
 _WORK_POOL_NAME = "duckbricks-pool"
 _ENTRYPOINT = "app/services/jobs/prefect_flows.py:run_job_flow"
 _FLOW_PATH = "/app"
+_MAX_FILTER_RESULTS = 200
 
 
 class PrefectApiClient:
@@ -63,7 +70,10 @@ class PrefectApiClient:
         """Create a Prefect deployment for the given job and return its deployment ID."""
         async with get_client() as client:
             flow_id: UUID = await client.create_flow_from_name(_FLOW_NAME)
-            schedules = self._build_schedules(job.schedule_cron if job.is_enabled else None)
+            schedules = self._build_schedules(
+                job.schedule_cron if job.is_enabled else None,
+                job.schedule_timezone,
+            )
             deployment_id: UUID = await client.create_deployment(
                 flow_id=flow_id,
                 name=self._deployment_name(job.id, job.name),
@@ -85,7 +95,10 @@ class PrefectApiClient:
         the next time the job is saved.
         """
         async with get_client() as client:
-            schedules = self._build_schedules(job.schedule_cron if job.is_enabled else None)
+            schedules = self._build_schedules(
+                job.schedule_cron if job.is_enabled else None,
+                job.schedule_timezone,
+            )
             await client.update_deployment(
                 deployment_id,
                 DeploymentUpdate(description=job.description, path=_FLOW_PATH),
@@ -121,9 +134,17 @@ class PrefectApiClient:
 
     async def list_runs(self, deployment_id: UUID, limit: int = 200) -> list[FlowRun]:
         """Return flow runs for a deployment, newest first, excluding scheduled runs."""
+        return await self.list_runs_for_deployments([deployment_id], limit=limit)
+
+    async def list_runs_for_deployments(
+        self, deployment_ids: list[UUID], limit: int = _MAX_FILTER_RESULTS
+    ) -> list[FlowRun]:
+        """Return recent non-scheduled runs for multiple deployments in one request."""
+        if not deployment_ids:
+            return []
         async with get_client() as client:
             runs: list[FlowRun] = await client.read_flow_runs(
-                deployment_filter=DeploymentFilter(id=DeploymentFilterId(any_=[deployment_id])),
+                deployment_filter=DeploymentFilter(id=DeploymentFilterId(any_=deployment_ids)),
                 flow_run_filter=FlowRunFilter(
                     state=FlowRunFilterState(
                         type=FlowRunFilterStateType(
@@ -141,9 +162,57 @@ class PrefectApiClient:
                     )
                 ),
                 sort=FlowRunSort.START_TIME_DESC,
-                limit=limit,
+                limit=min(limit, _MAX_FILTER_RESULTS),
             )
             return runs
+
+    async def list_scheduled_runs(
+        self, deployment_ids: list[UUID], limit: int = 200
+    ) -> list[FlowRun]:
+        """Return upcoming materialized runs for the requested deployments."""
+        if not deployment_ids:
+            return []
+        async with get_client() as client:
+            runs: list[FlowRun] = await client.get_scheduled_flow_runs_for_deployments(
+                deployment_ids,
+                scheduled_before=datetime.now(UTC) + timedelta(days=365),
+                limit=min(limit, _MAX_FILTER_RESULTS),
+            )
+            return sorted(
+                runs,
+                key=lambda run: run.expected_start_time or datetime.max.replace(tzinfo=UTC),
+            )
+
+    async def list_task_runs(self, flow_run_id: UUID) -> list[TaskRun]:
+        """Return task runs for a flow run in expected execution order."""
+        async with get_client() as client:
+            runs: list[TaskRun] = await client.read_task_runs(
+                task_run_filter=TaskRunFilter(
+                    flow_run_id=TaskRunFilterFlowRunId(any_=[flow_run_id])
+                ),
+                sort=TaskRunSort.EXPECTED_START_TIME_ASC,
+            )
+            return runs
+
+    async def list_logs(
+        self,
+        flow_run_id: UUID,
+        *,
+        task_run_id: UUID | None = None,
+        limit: int = 500,
+    ) -> list[Log]:
+        """Return chronological logs for a flow run or one task run."""
+        async with get_client() as client:
+            log_filter = LogFilter(
+                flow_run_id=LogFilterFlowRunId(any_=[flow_run_id]),
+                task_run_id=(LogFilterTaskRunId(any_=[task_run_id]) if task_run_id else None),
+            )
+            logs: list[Log] = await client.read_logs(
+                log_filter=log_filter,
+                limit=min(limit, _MAX_FILTER_RESULTS),
+                sort=LogSort.TIMESTAMP_ASC,
+            )
+            return logs
 
     async def get_run(self, run_id: UUID) -> FlowRun:
         """Return a single flow run by its ID."""
@@ -172,7 +241,14 @@ class PrefectApiClient:
         return f"job-{job_id}-{sanitized}"
 
     @staticmethod
-    def _build_schedules(cron_expression: str | None) -> list[DeploymentScheduleCreate]:
+    def _build_schedules(
+        cron_expression: str | None, timezone: str = "UTC"
+    ) -> list[DeploymentScheduleCreate]:
         if not cron_expression:
             return []
-        return [DeploymentScheduleCreate(schedule=CronSchedule(cron=cron_expression), active=True)]
+        return [
+            DeploymentScheduleCreate(
+                schedule=CronSchedule(cron=cron_expression, timezone=timezone),
+                active=True,
+            )
+        ]

@@ -21,6 +21,7 @@ def _make_job(
     schedule_cron: str | None = None,
     is_enabled: bool = True,
     prefect_deployment_id: str | None = None,
+    schedule_timezone: str = "UTC",
 ) -> MagicMock:
     job = MagicMock()
     job.id = job_id
@@ -29,6 +30,7 @@ def _make_job(
     job.schedule_cron = schedule_cron
     job.is_enabled = is_enabled
     job.prefect_deployment_id = prefect_deployment_id
+    job.schedule_timezone = schedule_timezone
     return job
 
 
@@ -114,6 +116,22 @@ class TestCreateDeployment:
         assert len(call_kwargs["schedules"]) == 1
 
     @pytest.mark.asyncio
+    async def test_attaches_the_selected_schedule_timezone(self):
+        mock_client = AsyncMock()
+        mock_client.create_flow_from_name.return_value = _FLOW_ID
+        mock_client.create_deployment.return_value = _DEPLOYMENT_ID
+        job = _make_job(
+            schedule_cron="0 6 * * *",
+            schedule_timezone="America/Mexico_City",
+        )
+        with patch(
+            "app.services.prefect.client.get_client", return_value=_make_client_context(mock_client)
+        ):
+            await PrefectApiClient().create_deployment(job)
+        schedule = mock_client.create_deployment.call_args.kwargs["schedules"][0].schedule
+        assert schedule.timezone == "America/Mexico_City"
+
+    @pytest.mark.asyncio
     async def test_omits_schedule_when_job_is_disabled(self):
         mock_client = AsyncMock()
         mock_client.create_flow_from_name.return_value = _FLOW_ID
@@ -177,6 +195,47 @@ class TestListRuns:
         ):
             result = await PrefectApiClient().list_runs(_DEPLOYMENT_ID)
         assert result == expected_runs
+
+    @pytest.mark.asyncio
+    async def test_lists_upcoming_runs_for_multiple_deployments(self):
+        mock_client = AsyncMock()
+        expected_runs = [MagicMock(expected_start_time=None)]
+        mock_client.get_scheduled_flow_runs_for_deployments.return_value = expected_runs
+        with patch(
+            "app.services.prefect.client.get_client",
+            return_value=_make_client_context(mock_client),
+        ):
+            result = await PrefectApiClient().list_scheduled_runs([_DEPLOYMENT_ID])
+        assert result == expected_runs
+        mock_client.get_scheduled_flow_runs_for_deployments.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lists_task_runs_for_a_flow_run(self):
+        mock_client = AsyncMock()
+        expected_runs = [MagicMock()]
+        mock_client.read_task_runs.return_value = expected_runs
+        with patch(
+            "app.services.prefect.client.get_client",
+            return_value=_make_client_context(mock_client),
+        ):
+            result = await PrefectApiClient().list_task_runs(_FLOW_RUN_ID)
+        assert result == expected_runs
+        task_filter = mock_client.read_task_runs.call_args.kwargs["task_run_filter"]
+        assert task_filter.flow_run_id.any_ == [_FLOW_RUN_ID]
+
+    @pytest.mark.asyncio
+    async def test_lists_logs_for_a_flow_run(self):
+        mock_client = AsyncMock()
+        expected_logs = [MagicMock()]
+        mock_client.read_logs.return_value = expected_logs
+        with patch(
+            "app.services.prefect.client.get_client",
+            return_value=_make_client_context(mock_client),
+        ):
+            result = await PrefectApiClient().list_logs(_FLOW_RUN_ID)
+        assert result == expected_logs
+        log_filter = mock_client.read_logs.call_args.kwargs["log_filter"]
+        assert log_filter.flow_run_id.any_ == [_FLOW_RUN_ID]
 
 
 class TestUiPaths:

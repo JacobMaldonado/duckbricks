@@ -1,7 +1,7 @@
 # DuckBricks Design System
 
-**Version:** 1.1.1
-**Last Updated:** August 24, 2026
+**Version:** 1.2.0
+**Last Updated:** August 25, 2026
 
 A design system for the DuckBricks data platform. This document describes the visual language and styling conventions used across the NiceGUI application, and is the reference for any UI work.
 
@@ -123,6 +123,10 @@ Spacing is applied via Quasar spacing utility classes (`q-pa-*`, `q-ma-*`, `q-mx
 - **Two-panel views:** `ui.splitter` with adjustable split (Query Editor).
 - **Metastore Workbench:** three panes for the catalog tree, schema asset list, and asset
   inspector. On narrow screens the panes stack vertically.
+- **Jobs dashboard:** responsive KPI cards followed by a searchable operations table; compact
+  screens may hide secondary schedule and task-count columns without hiding primary actions.
+- **Pipeline editor:** full-page two-column workspace with definition/tasks on the left and a
+  persistent flow preview on the right; columns stack on narrow screens.
 - **Full-height content:** `height: calc(100vh - 64px)` with `overflow: hidden` on `body` and `.nicegui-content` set to `p-0`.
 
 ---
@@ -146,7 +150,9 @@ Common modifiers: `flat dense round`, `color=white` (on the header).
 ### Inputs & Dialogs
 
 - **Inputs:** `ui.input`, `ui.select`, `ui.number` — styled with Quasar defaults.
-- **Dialogs:** `ui.dialog` containing `ui.card` with `q-pa-*` padding and an explicit `min-width` (`180px`–`700px` depending on content).
+- **Dialogs:** `ui.dialog` containing `ui.card` with `q-pa-*` padding and an explicit `min-width`
+  (`180px`–`700px` depending on content). File or run inspection may use a maximized dialog when
+  simultaneous navigation and content preview need most of the viewport.
 
 ### Cards & Panels
 
@@ -221,6 +227,8 @@ The canonical icon mapping lives in `app/constants/ui_style.py` (`TREE_ICONS`).
 ### Data Visualization Style
 
 - Query results render as a grid/table rather than charts today.
+- Job dependencies use a top-to-bottom Mermaid flowchart. Nodes use neutral borders and the
+  primary selection palette; the graph is a read-only reflection of the dependency controls.
 - Diff coloring uses the semantic diff palette above.
 
 ---
